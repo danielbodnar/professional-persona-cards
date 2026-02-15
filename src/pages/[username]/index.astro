@@ -1,0 +1,461 @@
+---
+import Base from "../../layouts/Base.astro";
+import ProfileHeader from "../../components/ProfileHeader.astro";
+import RadarChart from "../../components/RadarChart.astro";
+import StarInterestTile from "../../components/StarInterestTile.astro";
+import ColorLegend from "../../components/ColorLegend.astro";
+import PersonaCard from "../../components/PersonaCard.astro";
+import PersonaModal from "../../components/PersonaModal.astro";
+import ProjectCard from "../../components/ProjectCard.astro";
+import ProjectModal from "../../components/ProjectModal.astro";
+import LoadingState from "../../components/LoadingState.astro";
+import { PERSONA_COLORS, RADAR_LABELS } from "../../styles/tokens";
+
+const { username } = Astro.params;
+
+if (!username) {
+  return Astro.redirect("/");
+}
+
+// Fetch profile data from internal API
+let profileData: any = null;
+let isComputing = false;
+let errorMessage = "";
+
+try {
+  const apiUrl = new URL(`/api/${encodeURIComponent(username)}`, Astro.url);
+  const resp = await fetch(apiUrl.toString());
+
+  if (resp.status === 202) {
+    isComputing = true;
+  } else if (resp.ok) {
+    profileData = await resp.json();
+  } else if (resp.status === 404) {
+    errorMessage = `User "${username}" not found on GitHub.`;
+  } else {
+    errorMessage = `Failed to load profile (status ${resp.status}).`;
+  }
+} catch (e) {
+  errorMessage = "Failed to connect to the API. Please try again.";
+}
+
+// Helper: build radar axes from profile data
+function buildRadarAxes(profile: any) {
+  if (!profile?.personas) return [];
+  const axes: { label: string; value: number; color: string }[] = [];
+  for (const [key, config] of Object.entries(RADAR_LABELS)) {
+    const persona = profile.personas.find((p: any) => p.id === key);
+    if (persona && persona.stats) {
+      const avgStat = Math.round(
+        persona.stats.reduce((sum: number, s: any) => sum + (s.value || s[1] || 0), 0) /
+          persona.stats.length
+      );
+      axes.push({
+        label: config.label,
+        value: avgStat,
+        color: config.color,
+      });
+    }
+  }
+  return axes;
+}
+
+// Helper: build subtitle from persona titles
+function buildSubtitle(profile: any): string {
+  if (!profile?.personas) return "";
+  return profile.personas
+    .slice(0, 4)
+    .map((p: any) => {
+      let t = p.shortTitle || p.title || "";
+      return t.replace(/^(Principal|Staff|Crazy)\s+/, "");
+    })
+    .join(" \u00B7 ");
+}
+
+// Helper: build meta string
+function buildMeta(profile: any): string {
+  const parts: string[] = [];
+  if (profile?.email) parts.push(profile.email);
+  if (profile?.location) parts.push(profile.location);
+  if (profile?.login) parts.push(`github.com/${profile.login}`);
+  if (profile?.repoCount) parts.push(`${profile.repoCount} repos`);
+  if (profile?.starCount) parts.push(`${profile.starCount}+ stars`);
+  return parts.join(" \u00B7 ");
+}
+
+// Helper: build persona refs for ProjectCard
+function buildPersonaRefs(profile: any): { id: string; shortTitle: string; accent: string }[] {
+  if (!profile?.personas) return [];
+  return profile.personas.map((p: any) => ({
+    id: p.id,
+    shortTitle: (p.shortTitle || p.title || "").replace(/^(Principal|Staff|Crazy)\s+/, ""),
+    accent: p.accent || PERSONA_COLORS[p.id]?.accent || "#888",
+  }));
+}
+
+const radarAxes = profileData ? buildRadarAxes(profileData) : [];
+const subtitle = profileData ? buildSubtitle(profileData) : "";
+const meta = profileData ? buildMeta(profileData) : "";
+const personaRefs = profileData ? buildPersonaRefs(profileData) : [];
+
+const pageTitle = profileData?.name
+  ? `${profileData.name} — Identity Deck`
+  : `${username} — Identity Deck`;
+const pageDesc = profileData?.name
+  ? `Professional persona cards for ${profileData.name}`
+  : `Identity Deck for ${username}`;
+---
+<Base title={pageTitle} description={pageDesc}>
+  {isComputing && (
+    <LoadingState username={username} />
+  )}
+
+  {errorMessage && (
+    <main class="error-page">
+      <div class="error-content">
+        <div class="label">Identity Deck</div>
+        <h1 class="error-title">Profile Not Found</h1>
+        <p class="error-msg">{errorMessage}</p>
+        <a href="/" class="back-link">&larr; back to search</a>
+      </div>
+    </main>
+  )}
+
+  {profileData && !isComputing && !errorMessage && (
+    <main class="profile-page">
+      {/* Profile Header */}
+      <ProfileHeader
+        name={profileData.name || username}
+        subtitle={subtitle}
+        meta={meta}
+        avatarUrl={profileData.avatarUrl}
+      />
+
+      {/* Radar Chart */}
+      {radarAxes.length > 0 && (
+        <RadarChart axes={radarAxes} size={320} />
+      )}
+
+      {/* Star Interests */}
+      {profileData.starInterests && profileData.starInterests.length > 0 && (
+        <section class="interests-section">
+          <div class="interests-grid">
+            {profileData.starInterests.map((si: any) => (
+              <StarInterestTile
+                label={si.label}
+                count={si.count}
+                examples={si.examples}
+              />
+            ))}
+          </div>
+        </section>
+      )}
+
+      {/* Color Legend */}
+      {profileData.personas && profileData.personas.length > 0 && (
+        <ColorLegend
+          personas={profileData.personas.map((p: any) => ({
+            id: p.id,
+            title: (p.shortTitle || p.title || "").replace(/^(Principal|Staff|Crazy)\s+/, ""),
+            accent: p.accent || PERSONA_COLORS[p.id]?.accent || "#888",
+          }))}
+        />
+      )}
+
+      {/* Persona Cards Grid */}
+      {profileData.personas && profileData.personas.length > 0 && (
+        <section class="personas-section">
+          <div class="persona-grid">
+            {profileData.personas.map((p: any) => {
+              const accent = p.accent || PERSONA_COLORS[p.id]?.accent || "#888";
+              const stats = (p.stats || []).map((s: any) =>
+                Array.isArray(s) ? { label: s[0], value: s[1] } : s
+              );
+              return (
+                <PersonaCard
+                  id={p.id}
+                  title={p.title}
+                  shortTitle={(p.shortTitle || p.title || "").replace(/^(Principal|Staff|Crazy)\s+/, "")}
+                  tagline={p.tagline}
+                  accent={accent}
+                  icon={p.icon}
+                  experience={p.experience}
+                  yearsActive={p.yearsActive}
+                  stats={stats}
+                  stack={p.stack || []}
+                  details={p.details || []}
+                  employers={p.employers || []}
+                />
+              );
+            })}
+          </div>
+        </section>
+      )}
+
+      {/* Featured Projects Section */}
+      {profileData.projects && profileData.projects.length > 0 && (
+        <section class="projects-section">
+          <div class="section-header">
+            <div class="section-label">Featured Projects</div>
+            <h2 class="section-title">The Work</h2>
+            <p class="section-sub">color-coded by persona affinity</p>
+          </div>
+          <div class="project-grid">
+            {profileData.projects.map((proj: any) => (
+              <ProjectCard
+                name={proj.name}
+                description={proj.description || proj.desc}
+                url={proj.url}
+                tech={proj.tech || []}
+                personaMap={proj.personaMap || proj.pids || []}
+                personas={personaRefs}
+              />
+            ))}
+          </div>
+        </section>
+      )}
+
+      {/* Persona Modals (hidden by default) */}
+      {profileData.personas && profileData.personas.map((p: any) => {
+        const accent = p.accent || PERSONA_COLORS[p.id]?.accent || "#888";
+        const stats = (p.stats || []).map((s: any) =>
+          Array.isArray(s) ? { label: s[0], value: s[1] } : s
+        );
+        return (
+          <PersonaModal
+            id={p.id}
+            title={p.title}
+            tagline={p.tagline}
+            accent={accent}
+            icon={p.icon}
+            experience={p.experience}
+            yearsActive={p.yearsActive}
+            stats={stats}
+            stack={p.stack || []}
+            details={p.details || []}
+            employers={p.employers || []}
+            links={p.links || []}
+          />
+        );
+      })}
+
+      {/* Project Modals (hidden by default) */}
+      {profileData.projects && profileData.projects.map((proj: any) => (
+        <ProjectModal
+          name={proj.name}
+          description={proj.description || proj.desc}
+          url={proj.url}
+          tech={proj.tech || []}
+          personaMap={proj.personaMap || proj.pids || []}
+          personas={personaRefs}
+        />
+      ))}
+
+      {/* Footer */}
+      <footer class="profile-footer">
+        <span>Identity Deck &middot; generated from public GitHub data</span>
+      </footer>
+    </main>
+  )}
+</Base>
+
+<script>
+  // Modal open: click on persona card "open details" button
+  document.querySelectorAll('[data-persona-open]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const id = (btn as HTMLElement).dataset.personaOpen;
+      const modal = document.getElementById(`persona-modal-${id}`);
+      if (modal) {
+        modal.classList.add('active');
+        document.body.style.overflow = 'hidden';
+      }
+    });
+  });
+
+  // Modal open: click on project card "open details" button
+  document.querySelectorAll('[data-project-open]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const name = (btn as HTMLElement).dataset.projectOpen;
+      const modal = document.getElementById(`project-modal-${name}`);
+      if (modal) {
+        modal.classList.add('active');
+        document.body.style.overflow = 'hidden';
+      }
+    });
+  });
+
+  // Modal close
+  document.querySelectorAll('[data-modal-close]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const overlay = (btn as HTMLElement).closest('.modal-overlay');
+      if (overlay) {
+        overlay.classList.remove('active');
+        document.body.style.overflow = '';
+      }
+    });
+  });
+
+  // Close on backdrop click
+  document.querySelectorAll('.modal-overlay').forEach((overlay) => {
+    overlay.addEventListener('click', (e) => {
+      if (e.target === overlay) {
+        overlay.classList.remove('active');
+        document.body.style.overflow = '';
+      }
+    });
+  });
+
+  // Close on Escape key
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') {
+      document.querySelectorAll('.modal-overlay.active').forEach((overlay) => {
+        overlay.classList.remove('active');
+      });
+      document.body.style.overflow = '';
+    }
+  });
+</script>
+
+<style>
+  .profile-page {
+    max-width: 1120px;
+    margin: 0 auto;
+    padding: 48px 24px;
+  }
+
+  .error-page {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 100vh;
+    padding: 24px;
+  }
+
+  .error-content {
+    text-align: center;
+  }
+
+  .label {
+    font-size: 10px;
+    font-family: "SF Mono", "Cascadia Code", "Fira Code", Consolas, monospace;
+    letter-spacing: 4px;
+    text-transform: uppercase;
+    color: #444;
+    margin-bottom: 16px;
+  }
+
+  .error-title {
+    font-size: 24px;
+    font-weight: 200;
+    color: #fff;
+    margin: 0 0 12px;
+  }
+
+  .error-msg {
+    font-size: 12px;
+    color: #888;
+    font-family: "SF Mono", "Cascadia Code", "Fira Code", Consolas, monospace;
+    margin: 0 0 24px;
+  }
+
+  .back-link {
+    font-size: 10px;
+    color: #666;
+    font-family: "SF Mono", "Cascadia Code", "Fira Code", Consolas, monospace;
+    text-decoration: underline;
+    text-underline-offset: 2px;
+  }
+
+  .back-link:hover {
+    color: #aaa;
+  }
+
+  .interests-section {
+    max-width: 760px;
+    margin: 0 auto 40px;
+  }
+
+  .interests-grid {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    justify-content: center;
+  }
+
+  .personas-section {
+    margin: 0 auto 60px;
+  }
+
+  .persona-grid {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    justify-content: center;
+    align-items: stretch;
+  }
+
+  .projects-section {
+    margin: 0 auto 48px;
+  }
+
+  .section-header {
+    text-align: center;
+    margin-bottom: 28px;
+  }
+
+  .section-label {
+    font-size: 10px;
+    font-family: "SF Mono", "Cascadia Code", "Fira Code", Consolas, monospace;
+    color: #444;
+    letter-spacing: 4px;
+    text-transform: uppercase;
+  }
+
+  .section-title {
+    margin: 8px 0 0;
+    font-size: 24px;
+    font-weight: 200;
+    color: #fff;
+  }
+
+  .section-sub {
+    margin: 4px 0 0;
+    font-size: 10px;
+    color: #555;
+    font-family: "SF Mono", "Cascadia Code", "Fira Code", Consolas, monospace;
+  }
+
+  .project-grid {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 18px;
+    justify-content: center;
+  }
+
+  .profile-footer {
+    text-align: center;
+    margin-top: 48px;
+    padding-bottom: 24px;
+  }
+
+  .profile-footer span {
+    font-size: 9px;
+    color: #333;
+    font-family: "SF Mono", "Cascadia Code", "Fira Code", Consolas, monospace;
+  }
+
+  /* Responsive */
+  @media (max-width: 768px) {
+    .profile-page {
+      padding: 24px 12px;
+    }
+
+    .persona-grid {
+      gap: 6px;
+    }
+
+    .project-grid {
+      gap: 12px;
+    }
+  }
+</style>
