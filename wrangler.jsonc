@@ -1,0 +1,75 @@
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "identity-deck",
+  "compatibility_date": "2026-02-14",
+  "compatibility_flags": ["nodejs_compat_v2"],
+  "observability": {
+    "enabled": true,
+    "head_sampling_rate": 1
+  },
+  "vars": {
+    "ENVIRONMENT": "production"
+  },
+
+  // KV — GitHub API response cache (24h TTL)
+  "kv_namespaces": [
+    {
+      "binding": "KV"
+    }
+  ],
+
+  // D1 — Persistent storage for profiles, personas, projects
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "identity-deck",
+      "migrations_dir": "migrations"
+    }
+  ],
+
+  // R2 — Store generated OG images
+  "r2_buckets": [
+    {
+      "binding": "R2",
+      "bucket_name": "identity-deck-assets"
+    }
+  ],
+
+  // Queues — Background processing for large profiles
+  "queues": {
+    "producers": [
+      {
+        "binding": "PROFILE_QUEUE",
+        "queue": "profile-computation"
+      }
+    ],
+    "consumers": [
+      {
+        "queue": "profile-computation",
+        "max_batch_size": 5,
+        "max_batch_timeout": 30,
+        "max_retries": 3,
+        "dead_letter_queue": "profile-computation-dlq",
+        "max_concurrency": 2
+      }
+    ]
+  },
+
+  // Durable Objects — Rate limiting per GitHub user
+  "durable_objects": {
+    "bindings": [
+      {
+        "name": "RATE_LIMITER",
+        "class_name": "RateLimiter"
+      }
+    ]
+  },
+
+  // DO migrations
+  "migrations": [
+    {
+      "tag": "v1",
+      "new_sqlite_classes": ["RateLimiter"]
+    }
+  ]
+}

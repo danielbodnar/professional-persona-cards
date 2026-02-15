@@ -47,7 +47,7 @@ Implementation is split across 4 specialized agents under `.claude/agents/`:
 
 | Agent | Scope | Directory |
 |-------|-------|-----------|
-| `infrastructure` | Cloudflare config, D1/KV/R2/Queue/DO, GitHub client, OG images, design tokens | `wrangler.toml`, `migrations/`, `src/lib/github/`, `src/lib/db/`, `src/lib/og/`, `src/lib/rate-limiter.ts`, `src/lib/queue-consumer.ts`, `src/styles/tokens.ts` |
+| `infrastructure` | Cloudflare config, D1/KV/R2/Queue/DO, GitHub client, OG images, design tokens | `wrangler.jsonc`, `migrations/`, `src/lib/github/`, `src/lib/db/`, `src/lib/og/`, `src/lib/rate-limiter.ts`, `src/lib/queue-consumer.ts`, `src/styles/tokens.ts` |
 | `persona-engine` | Deterministic scoring algorithms — pure functions, zero CF deps | `src/lib/engine/` |
 | `api-layer` | Astro API route handlers | `src/api/[username]/` |
 | `frontend-ui` | Astro pages, components, layouts, styles | `src/pages/`, `src/components/`, `src/layouts/`, `src/styles/global.css` |

@@ -278,7 +278,7 @@ wrangler kv namespace create KV
 wrangler r2 bucket create identity-deck-assets
 wrangler queues create profile-computation
 
-# Update wrangler.toml with your resource IDs from the commands above
+# Update wrangler.jsonc with your resource IDs from the commands above
 
 # Apply D1 migrations
 wrangler d1 execute identity-deck --local --file=./migrations/0001_init.sql
@@ -406,7 +406,7 @@ The application deploys as a single Cloudflare Worker with static assets. The As
 │   ├── pages/               # Astro page routes
 │   └── styles/              # Global CSS + design tokens
 ├── astro.config.mjs         # Astro + Cloudflare Workers adapter
-├── wrangler.toml            # Cloudflare Workers configuration
+├── wrangler.jsonc            # Cloudflare Workers configuration (JSONC format)
 └── env.d.ts                 # TypeScript environment declarations
 ```
 
