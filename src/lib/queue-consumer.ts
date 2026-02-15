@@ -5,26 +5,11 @@
  * For each message:
  *   1. Fetch GitHub data (profile, repos, stars)
  *   2. Run the persona engine (deterministic algorithms)
- *   3. Write computed results to D1
- *   4. Generate OG image and store in R2
+ *   3. Transform engine output to D1 row shapes
+ *   4. Write computed results to D1
+ *   5. Generate OG image and store in R2
  *
  * Reference: spec lines 910-940.
- *
- * NOTE: This file imports from `src/lib/engine/index.ts` which is owned
- * by the persona-engine agent. That module is expected to export:
- *
- *   export function computeProfile(
- *     githubProfile: GitHubProfile,
- *     repos: GitHubRepo[],
- *     stars: GitHubRepo[],
- *   ): ComputedProfile;
- *
- *   export interface ComputedProfile {
- *     personas: PersonaRow[];    (without id)
- *     projects: ProjectRow[];    (without id)
- *     radarAxes: RadarAxisRow[]; (without id)
- *     starInterests: StarInterestRow[]; (without id)
- *   }
  */
 
 import { fetchProfile, fetchRepos, fetchAllStars } from "./github/client";
@@ -37,11 +22,8 @@ import {
 } from "./db/queries";
 import type { ProfileRow } from "./db/types";
 import { generateOGImage } from "./og/generator";
-
-// The persona engine barrel — created by the persona-engine agent.
-// If not yet available, the build will fail with a clear import error.
-import type { ComputedProfile } from "./engine/index";
-import { computeProfile } from "./engine/index";
+import { computeFullProfile } from "./engine/index";
+import type { FullProfile } from "./engine/index";
 
 /** Shape of messages produced by the API layer onto PROFILE_QUEUE. */
 export interface QueueMessage {
@@ -67,7 +49,6 @@ export async function handleQueueBatch(
       await processUsername(username, env);
       msg.ack();
     } catch (err) {
-      // On failure, the message will be retried by the queue infrastructure.
       console.error(
         `[queue-consumer] Failed to process ${msg.body.username}:`,
         err,
@@ -79,7 +60,7 @@ export async function handleQueueBatch(
 
 /**
  * Full pipeline for a single username:
- *   GitHub fetch -> persona engine -> D1 persist -> OG image generation.
+ *   GitHub fetch -> persona engine -> transform -> D1 persist -> OG image.
  */
 async function processUsername(username: string, env: Env): Promise<void> {
   // 1. Fetch GitHub data (cached in KV)
@@ -90,7 +71,7 @@ async function processUsername(username: string, env: Env): Promise<void> {
   ]);
 
   // 2. Run persona engine (deterministic — no AI/LLM)
-  const computed: ComputedProfile = computeProfile(githubProfile, repos, stars);
+  const computed: FullProfile = computeFullProfile(githubProfile, repos, stars);
 
   // 3. Build a simple hash of raw data to detect changes on next run
   const githubDataHash = simpleHash(
@@ -122,18 +103,63 @@ async function processUsername(username: string, env: Env): Promise<void> {
     raw_profile: JSON.stringify(githubProfile),
   };
 
-  // 5. Write everything to D1
+  // 5. Transform engine output to D1 row shapes
+  const personaRows = computed.personas.map((p) => ({
+    persona_id: p.persona_id,
+    title: p.title,
+    tagline: p.tagline,
+    accent_color: p.accent_color,
+    icon: p.icon,
+    experience_label: p.experience_label,
+    years_active: p.years_active,
+    confidence: p.confidence,
+    stats: JSON.stringify(p.stats),
+    stack: JSON.stringify(p.stack),
+    details: JSON.stringify(p.details),
+    starred_repos: JSON.stringify(p.starred_repos),
+    employers: null,
+    links: null,
+    sort_order: p.sort_order,
+  }));
+
+  const projectRows = computed.projects.map((p, i) => ({
+    name: p.name,
+    description: p.description,
+    url: p.url,
+    tech: JSON.stringify(p.tech),
+    persona_map: JSON.stringify(p.persona_map),
+    language: p.language,
+    stars: p.stars,
+    forks: p.forks,
+    sort_order: i,
+  }));
+
+  const radarRows = computed.radar_axes.map((a) => ({
+    label: a.label,
+    value: a.value,
+    color: a.color,
+    sort_order: a.sort_order,
+  }));
+
+  const interestRows = computed.star_interests.map((s, i) => ({
+    label: s.label,
+    count: s.count,
+    examples: s.examples,
+    sort_order: i,
+  }));
+
+  // 6. Write everything to D1
   await upsertProfile(env.DB, profileRow);
   await Promise.all([
-    upsertPersonas(env.DB, username, computed.personas),
-    upsertProjects(env.DB, username, computed.projects),
-    upsertRadarAxes(env.DB, username, computed.radarAxes),
-    upsertStarInterests(env.DB, username, computed.starInterests),
+    upsertPersonas(env.DB, username, personaRows),
+    upsertProjects(env.DB, username, projectRows),
+    upsertRadarAxes(env.DB, username, radarRows),
+    upsertStarInterests(env.DB, username, interestRows),
   ]);
 
-  // 6. Generate OG image (stores in R2)
+  // 7. Generate OG image (stores in R2)
   try {
-    await generateOGImage(profileRow, computed.personas, env);
+    await generateOGImage(profileRow, personaRows, env);
   } catch (err) {
     // OG image generation failure should not fail the whole pipeline
     console.error(`[queue-consumer] OG image generation failed for ${username}:`, err);

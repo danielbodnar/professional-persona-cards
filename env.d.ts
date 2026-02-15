@@ -1,16 +1,14 @@
 /// <reference path="../.astro/types.d.ts" />
+/// <reference types="./worker-configuration.d.ts" />
+
+// Secrets not in wrangler.jsonc vars — extend the generated Env
+declare namespace Cloudflare {
+  interface Env {
+    GITHUB_TOKEN: string;
+  }
+}
 
 type Runtime = import("@astrojs/cloudflare").Runtime<Env>;
-
-interface Env {
-  KV: KVNamespace;
-  DB: D1Database;
-  R2: R2Bucket;
-  PROFILE_QUEUE: Queue;
-  RATE_LIMITER: DurableObjectNamespace;
-  GITHUB_TOKEN: string;
-  ENVIRONMENT: string;
-}
 
 declare namespace App {
   interface Locals extends Runtime {}

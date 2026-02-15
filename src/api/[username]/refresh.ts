@@ -1,4 +1,5 @@
 import type { APIRoute } from 'astro';
+import { checkRateLimit, consumeRateLimit } from '../../lib/rate-limiter';
 
 const USERNAME_RE = /^[a-z\d](?:[a-z\d-]{0,37}[a-z\d])?$/i;
 
@@ -26,8 +27,6 @@ function jsonResponse(
 
 /**
  * OPTIONS /api/:username/refresh
- *
- * CORS preflight handler for the POST endpoint.
  */
 export const OPTIONS: APIRoute = async () => {
   return new Response(null, {
@@ -40,7 +39,7 @@ export const OPTIONS: APIRoute = async () => {
  * POST /api/:username/refresh
  *
  * Force a profile re-computation. Rate-limited to 1 refresh per hour per user
- * via a Durable Object rate limiter.
+ * via KV-based rate limiter.
  */
 export const POST: APIRoute = async ({ params, locals }) => {
   try {
@@ -52,20 +51,8 @@ export const POST: APIRoute = async ({ params, locals }) => {
       return jsonResponse({ error: 'Invalid username', username }, 400);
     }
 
-    // ---- Rate limiter via Durable Object ----
-    const rateLimiterId = env.RATE_LIMITER.idFromName(username);
-    const rateLimiterStub = env.RATE_LIMITER.get(rateLimiterId);
-
-    // Check whether a refresh is allowed
-    const checkUrl = new URL('https://rate-limiter.internal');
-    checkUrl.searchParams.set('action', 'check');
-    checkUrl.searchParams.set('username', username);
-
-    const checkResponse = await rateLimiterStub.fetch(checkUrl.toString());
-    const checkResult = (await checkResponse.json()) as {
-      allowed: boolean;
-      retryAfter?: number;
-    };
+    // ---- Rate limiter via KV ----
+    const checkResult = await checkRateLimit(env.KV, username);
 
     if (!checkResult.allowed) {
       const retryAfter = checkResult.retryAfter ?? 3600;
@@ -77,11 +64,7 @@ export const POST: APIRoute = async ({ params, locals }) => {
     }
 
     // ---- Consume the rate limit token ----
-    const consumeUrl = new URL('https://rate-limiter.internal');
-    consumeUrl.searchParams.set('action', 'consume');
-    consumeUrl.searchParams.set('username', username);
-
-    await rateLimiterStub.fetch(consumeUrl.toString());
+    await consumeRateLimit(env.KV, username);
 
     // ---- Enqueue the forced refresh ----
     await env.PROFILE_QUEUE.send({
