@@ -1,10 +1,23 @@
-/* Identity Deck — Global Dark Theme */
+/* profiles.sh — Global Dark Theme */
+
+:root {
+  --space-xs: 0.25rem;
+  --space-sm: 0.5rem;
+  --space-md: 1rem;
+  --space-lg: 1.5rem;
+  --space-xl: 2rem;
+  --space-2xl: 3rem;
+  --radius-sm: 0.25rem;
+  --radius-md: 0.5rem;
+  --radius-lg: 1rem;
+}
 
 *, *::before, *::after {
   box-sizing: border-box;
 }
 
 html {
+  font-size: 16px;
   scroll-behavior: smooth;
 }
 
@@ -66,7 +79,7 @@ img {
   -webkit-backdrop-filter: blur(8px);
   align-items: center;
   justify-content: center;
-  padding: 20px;
+  padding: var(--space-lg);
 }
 
 .modal-overlay.active {

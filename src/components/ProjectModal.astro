@@ -1,6 +1,4 @@
 ---
-import { PERSONA_COLORS } from "../styles/tokens";
-
 interface PersonaRef {
   id: string;
   shortTitle: string;
@@ -14,14 +12,15 @@ interface Props {
   tech: string[];
   personaMap: string[];
   personas: PersonaRef[];
+  readmeExcerpt?: string | null;
 }
 
-const { name, description, url, tech, personaMap, personas } = Astro.props;
+const { name, description, url, tech, personaMap, personas, readmeExcerpt } = Astro.props;
 
 const stripeColors = personaMap
   .map((pid) => {
-    const p = PERSONA_COLORS[pid];
-    return p ? p.accent : null;
+    const found = personas.find((p) => p.id === pid);
+    return found?.accent ?? null;
   })
   .filter(Boolean) as string[];
 
@@ -50,6 +49,13 @@ const personaLegend = personaMap
             <a href={url} target="_blank" rel="noopener noreferrer" class="pm-url">
               {url.replace(/^https?:\/\//, "")} &rarr;
             </a>
+          )}
+
+          {readmeExcerpt && (
+            <Fragment>
+              <div class="pm-section-label">README</div>
+              <div class="pm-readme">{readmeExcerpt}</div>
+            </Fragment>
           )}
 
           <div class="pm-section-label">Tech</div>
@@ -83,7 +89,7 @@ const personaLegend = personaMap
 
 <style>
   .project-modal-panel {
-    width: 400px;
+    width: clamp(18rem, 90vw, 25rem);
     max-width: 95vw;
     max-height: 90vh;
     overflow-y: auto;
@@ -122,7 +128,7 @@ const personaLegend = personaMap
 
   .pm-name {
     margin: 0;
-    font-size: 17px;
+    font-size: 1.0625rem;
     font-weight: 700;
     color: #fff;
     font-family: "SF Mono", "Cascadia Code", "Fira Code", Consolas, monospace;
@@ -130,14 +136,14 @@ const personaLegend = personaMap
 
   .pm-desc {
     margin: 6px 0 12px;
-    font-size: 11px;
+    font-size: 0.8125rem;
     color: #999;
     line-height: 1.4;
   }
 
   .pm-url {
     display: inline-block;
-    font-size: 10px;
+    font-size: 0.8125rem;
     font-family: "SF Mono", "Cascadia Code", "Fira Code", Consolas, monospace;
     color: #40c4ff;
     text-decoration: none;
@@ -154,12 +160,28 @@ const personaLegend = personaMap
   }
 
   .pm-section-label {
-    font-size: 8px;
+    font-size: 0.8125rem;
     color: #555;
     font-family: "SF Mono", "Cascadia Code", "Fira Code", Consolas, monospace;
     text-transform: uppercase;
     letter-spacing: 1.5px;
     margin-bottom: 5px;
+  }
+
+  .pm-readme {
+    font-size: 0.75rem;
+    font-family: "SF Mono", "Cascadia Code", "Fira Code", Consolas, monospace;
+    color: #999;
+    line-height: 1.5;
+    max-height: 12rem;
+    overflow-y: auto;
+    white-space: pre-wrap;
+    word-break: break-word;
+    margin-bottom: 12px;
+    padding: 8px;
+    background: rgba(255, 255, 255, 0.02);
+    border-radius: 4px;
+    border: 1px solid rgba(255, 255, 255, 0.05);
   }
 
   .pm-tech {
@@ -169,7 +191,7 @@ const personaLegend = personaMap
 
   .pm-tech-badge {
     display: inline-block;
-    font-size: 9px;
+    font-size: 0.8125rem;
     font-family: "SF Mono", "Cascadia Code", "Fira Code", Consolas, monospace;
     padding: 2px 6px;
     border-radius: 3px;
@@ -200,7 +222,7 @@ const personaLegend = personaMap
   }
 
   .pm-legend-item span {
-    font-size: 9px;
+    font-size: 0.8125rem;
     color: #777;
     font-family: "SF Mono", "Cascadia Code", "Fira Code", Consolas, monospace;
   }
@@ -216,7 +238,7 @@ const personaLegend = personaMap
     border-bottom: none;
     background: rgba(255, 255, 255, 0.02);
     border-radius: 0 0 16px 0;
-    font-size: 10px;
+    font-size: 0.8125rem;
     font-family: "SF Mono", "Cascadia Code", "Fira Code", Consolas, monospace;
     color: #555;
     transition: color 0.15s;

@@ -17,7 +17,9 @@ const { label, count, examples } = Astro.props;
 
 <style>
   .tile {
-    width: 230px;
+    min-width: 12rem;
+    flex: 1 1 14rem;
+    max-width: 18rem;
     padding: 8px 12px;
     border-radius: 8px;
     background: rgba(255, 255, 255, 0.03);
@@ -32,19 +34,19 @@ const { label, count, examples } = Astro.props;
   }
 
   .tile-label {
-    font-size: 10px;
+    font-size: 0.8125rem;
     color: #ccc;
     font-weight: 600;
   }
 
   .tile-count {
-    font-size: 8px;
+    font-size: 0.8125rem;
     color: #555;
     font-family: "SF Mono", "Cascadia Code", "Fira Code", Consolas, monospace;
   }
 
   .tile-examples {
-    font-size: 8px;
+    font-size: 0.8125rem;
     color: #666;
     font-family: "SF Mono", "Cascadia Code", "Fira Code", Consolas, monospace;
     line-height: 1.4;

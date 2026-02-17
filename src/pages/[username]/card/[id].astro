@@ -50,17 +50,17 @@ try {
 
 const accent = persona?.accent_color || PERSONA_COLORS[id]?.accent || "#888";
 const pageTitle = persona
-  ? `${persona.title} — ${profileName} — Identity Deck`
-  : `${id} — Identity Deck`;
+  ? `${persona.title} — ${profileName} — profiles.sh`
+  : `${id} — profiles.sh`;
 const pageDesc = persona
-  ? `${persona.tagline} — ${profileName}'s Identity Deck`
-  : `Identity Deck persona card`;
+  ? `${persona.tagline} — ${profileName}'s profiles.sh`
+  : `profiles.sh persona card`;
 ---
 <Base title={pageTitle} description={pageDesc}>
   {errorMessage && (
     <main class="error-page">
       <div class="error-content">
-        <div class="label">Identity Deck</div>
+        <div class="label">profiles.sh</div>
         <p class="error-msg">{errorMessage}</p>
         <a href={`/${username}`} class="back-link">&larr; view full profile</a>
       </div>
@@ -70,7 +70,7 @@ const pageDesc = persona
   {persona && (
     <main class="card-page">
       <div class="card-page-header">
-        <div class="label">Identity Deck</div>
+        <div class="label">profiles.sh</div>
         <p class="card-page-sub">
           <a href={`/${username}`}>{profileName}</a> &middot; Persona Card
         </p>
@@ -188,7 +188,7 @@ const pageDesc = persona
   }
 
   .label {
-    font-size: 10px;
+    font-size: 0.8125rem;
     font-family: "SF Mono", "Cascadia Code", "Fira Code", Consolas, monospace;
     letter-spacing: 4px;
     text-transform: uppercase;
@@ -197,14 +197,14 @@ const pageDesc = persona
   }
 
   .error-msg {
-    font-size: 12px;
+    font-size: 0.875rem;
     color: #888;
     font-family: "SF Mono", "Cascadia Code", "Fira Code", Consolas, monospace;
     margin: 0 0 24px;
   }
 
   .back-link {
-    font-size: 10px;
+    font-size: 0.8125rem;
     color: #666;
     font-family: "SF Mono", "Cascadia Code", "Fira Code", Consolas, monospace;
     text-decoration: underline;
@@ -229,7 +229,7 @@ const pageDesc = persona
   }
 
   .card-page-sub {
-    font-size: 12px;
+    font-size: 0.875rem;
     color: #555;
     font-family: "SF Mono", "Cascadia Code", "Fira Code", Consolas, monospace;
     margin: 8px 0 0;
@@ -256,7 +256,7 @@ const pageDesc = persona
   }
 
   .card-page-footer a {
-    font-size: 10px;
+    font-size: 0.8125rem;
     color: #666;
     font-family: "SF Mono", "Cascadia Code", "Fira Code", Consolas, monospace;
     text-decoration: underline;

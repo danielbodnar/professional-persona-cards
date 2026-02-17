@@ -1,21 +1,62 @@
 ---
+interface BadgeItem {
+  label: string;
+  value: string;
+}
+
+interface TagPill {
+  name: string;
+  color?: string;
+}
+
 interface Props {
   name: string;
   subtitle: string;
   meta: string;
   avatarUrl?: string;
+  badges?: BadgeItem[];
+  languages?: TagPill[];
+  topics?: TagPill[];
 }
 
-const { name, subtitle, meta, avatarUrl } = Astro.props;
+const { name, subtitle, meta, avatarUrl, badges = [], languages = [], topics = [] } = Astro.props;
+const hasTags = languages.length > 0 || topics.length > 0;
 ---
 <header class="profile-header">
-  <div class="label">Identity Deck</div>
+  <div class="label">profiles.sh</div>
   {avatarUrl && (
     <img src={avatarUrl} alt={name} class="avatar" width="64" height="64" />
   )}
   <h1 class="name">{name}</h1>
   <p class="subtitle">{subtitle}</p>
   <p class="meta">{meta}</p>
+
+  {badges.length > 0 && (
+    <div class="badge-ribbon">
+      {badges.map((b) => (
+        <span class="badge">
+          <span class="badge-label">{b.label}</span>
+          <span class="badge-value">{b.value}</span>
+        </span>
+      ))}
+    </div>
+  )}
+
+  {hasTags && (
+    <div class="tag-pills">
+      {languages.map((l) => (
+        <span class="pill pill-lang" style={l.color ? `border-color: ${l.color};` : ""}>
+          {l.color && <span class="pill-dot" style={`background: ${l.color};`} />}
+          {l.name}
+        </span>
+      ))}
+      {topics.map((t) => (
+        <span class="pill pill-topic" data-topic={t.name.toLowerCase()}>
+          {t.name}
+        </span>
+      ))}
+    </div>
+  )}
 </header>
 
 <style>
@@ -25,7 +66,7 @@ const { name, subtitle, meta, avatarUrl } = Astro.props;
   }
 
   .label {
-    font-size: 10px;
+    font-size: 0.8125rem;
     font-family: "SF Mono", "Cascadia Code", "Fira Code", Consolas, monospace;
     color: #444;
     letter-spacing: 4px;
@@ -34,8 +75,8 @@ const { name, subtitle, meta, avatarUrl } = Astro.props;
   }
 
   .avatar {
-    width: 64px;
-    height: 64px;
+    width: clamp(3rem, 5vw, 4rem);
+    height: clamp(3rem, 5vw, 4rem);
     border-radius: 50%;
     border: 1px solid rgba(255, 255, 255, 0.1);
     margin-bottom: 10px;
@@ -43,7 +84,7 @@ const { name, subtitle, meta, avatarUrl } = Astro.props;
 
   .name {
     margin: 8px 0 0;
-    font-size: 36px;
+    font-size: 2.25rem;
     font-weight: 200;
     color: #fff;
     letter-spacing: -0.03em;
@@ -51,15 +92,94 @@ const { name, subtitle, meta, avatarUrl } = Astro.props;
 
   .subtitle {
     margin: 6px 0 0;
-    font-size: 12px;
+    font-size: 0.875rem;
     color: #555;
     font-family: "SF Mono", "Cascadia Code", "Fira Code", Consolas, monospace;
   }
 
   .meta {
     margin: 4px 0 0;
-    font-size: 10px;
+    font-size: 0.8125rem;
     color: #444;
     font-family: "SF Mono", "Cascadia Code", "Fira Code", Consolas, monospace;
+  }
+
+  .badge-ribbon {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 6px;
+    margin-top: 12px;
+  }
+
+  .badge {
+    display: inline-flex;
+    font-family: "SF Mono", "Cascadia Code", "Fira Code", Consolas, monospace;
+    font-size: 0.75rem;
+    border-radius: 4px;
+    overflow: hidden;
+    border: 1px solid rgba(255, 255, 255, 0.08);
+  }
+
+  .badge-label {
+    padding: 2px 6px;
+    background: rgba(255, 255, 255, 0.06);
+    color: #888;
+  }
+
+  .badge-value {
+    padding: 2px 8px;
+    background: rgba(100, 200, 255, 0.12);
+    color: #ddd;
+    font-weight: 600;
+  }
+
+  .tag-pills {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 6px;
+    margin-top: 10px;
+  }
+
+  .pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    font-family: "SF Mono", "Cascadia Code", "Fira Code", Consolas, monospace;
+    font-size: 0.75rem;
+    padding: 2px 8px;
+    border-radius: 12px;
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    color: #ccc;
+    transition: border-color 0.2s, background 0.2s;
+  }
+
+  .pill-dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    flex-shrink: 0;
+  }
+
+  .pill-topic {
+    color: #999;
+    border-color: rgba(255, 255, 255, 0.08);
+  }
+
+  .pill.featured {
+    background: rgba(255, 200, 50, 0.1);
+    border-color: rgba(255, 200, 50, 0.4);
+    color: #ffd54f;
+  }
+
+  @media (max-width: 480px) {
+    .badge-ribbon {
+      gap: 4px;
+    }
+
+    .tag-pills {
+      gap: 4px;
+    }
   }
 </style>

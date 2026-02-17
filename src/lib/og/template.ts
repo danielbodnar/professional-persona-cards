@@ -5,7 +5,7 @@
  *   - Username and display name
  *   - Top 3-4 persona icons with titles
  *   - A miniature radar chart
- *   - "Identity Deck" branding
+ *   - "profiles.sh" branding
  *
  * Uses design tokens from src/styles/tokens.ts for persona colors.
  */
@@ -92,7 +92,7 @@ export function renderOGTemplate(
 
   <!-- Branding -->
   <text x="80" y="110" fill="#ffffff" font-size="14" font-family="monospace"
-        letter-spacing="4" opacity="0.5" text-transform="uppercase">IDENTITY DECK</text>
+        letter-spacing="4" opacity="0.5" text-transform="uppercase">PROFILES.SH</text>
 
   <!-- Avatar placeholder (circle) -->
   <circle cx="120" cy="200" r="45" fill="#ffffff10" stroke="#ffffff20" stroke-width="1.5"/>
@@ -125,7 +125,7 @@ export function renderOGTemplate(
 
   <!-- Footer -->
   <text x="80" y="595" fill="#ffffff" font-size="11" font-family="monospace"
-        opacity="0.3">identitydeck.dev</text>
+        opacity="0.3">profiles.sh</text>
   <text x="1120" y="595" text-anchor="end" fill="#ffffff" font-size="11"
         font-family="monospace" opacity="0.3">${topPersonas.length} persona${topPersonas.length !== 1 ? "s" : ""} detected</text>
 </svg>`;

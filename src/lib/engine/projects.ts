@@ -1,4 +1,5 @@
-import { DOMAIN_SIGNALS } from "./domain-signals";
+import type { Category } from "./category-seeds";
+import { CATEGORY_SEEDS } from "./category-seeds";
 import type { RepoData } from "./scoring";
 
 // ---------------------------------------------------------------------------
@@ -17,47 +18,48 @@ export interface ProjectCard {
 }
 
 // ---------------------------------------------------------------------------
-// Map a single repo to its matching persona domains
+// Map a single repo to its matching category IDs
 // ---------------------------------------------------------------------------
 
 /**
- * Score a repo against all 9 domain signals.
+ * Score a repo against all categories.
  *   - Language match: +2
  *   - Topic match: +3 per matching topic
  *   - Description keyword match: +1.5 per keyword
  *
- * Include domains with score >= 2. Return sorted by score descending.
+ * Include categories with score >= 2. Return sorted by score descending.
  */
-export function mapRepoToPersonas(repo: RepoData): string[] {
+export function mapRepoToPersonas(
+  repo: RepoData,
+  categories: Category[] = CATEGORY_SEEDS,
+): string[] {
   const lang = (repo.language || "").toLowerCase();
   const topics = (repo.topics || []).map((t) => t.toLowerCase());
   const desc = (repo.description || "").toLowerCase();
 
-  const mapped: { domain: string; score: number }[] = [];
+  const mapped: { id: string; score: number }[] = [];
 
-  for (const [domain, signals] of Object.entries(DOMAIN_SIGNALS)) {
+  for (const cat of categories) {
     let score = 0;
 
-    if (signals.languages.some((l) => l.toLowerCase() === lang)) {
+    if (cat.languages.some((l) => l.toLowerCase() === lang)) {
       score += 2;
     }
 
     const topicHits = topics.filter((t) =>
-      signals.topics.some((st) => t.includes(st) || st.includes(t)),
+      cat.topics.some((st) => t.includes(st) || st.includes(t)),
     ).length;
     score += topicHits * 3;
 
-    const descHits = signals.descriptionKeywords.filter((kw) =>
-      desc.includes(kw),
-    ).length;
+    const descHits = cat.keywords.filter((kw) => desc.includes(kw)).length;
     score += descHits * 1.5;
 
     if (score >= 2) {
-      mapped.push({ domain, score });
+      mapped.push({ id: cat.id, score });
     }
   }
 
-  return mapped.sort((a, b) => b.score - a.score).map((m) => m.domain);
+  return mapped.sort((a, b) => b.score - a.score).map((m) => m.id);
 }
 
 // ---------------------------------------------------------------------------
@@ -65,28 +67,29 @@ export function mapRepoToPersonas(repo: RepoData): string[] {
 // ---------------------------------------------------------------------------
 
 /**
- * For each owned repo with at least one persona mapping:
+ * For each owned repo with at least one category mapping:
  *   - Extract name, description, url, language
  *   - Determine tech stack from language + topics
- *   - Map to personas using mapRepoToPersonas
+ *   - Map to categories using mapRepoToPersonas
  *   - Include stars and forks count
  *
  * Sort by stars descending (most popular first).
  */
-export function generateProjectCards(ownedRepos: RepoData[]): ProjectCard[] {
+export function generateProjectCards(
+  ownedRepos: RepoData[],
+  categories: Category[] = CATEGORY_SEEDS,
+): ProjectCard[] {
   const cards: ProjectCard[] = [];
 
   for (const repo of ownedRepos) {
-    const personaMap = mapRepoToPersonas(repo);
+    const personaMap = mapRepoToPersonas(repo, categories);
     if (personaMap.length === 0) continue;
 
-    // Build tech stack from language + topics
     const tech: string[] = [];
     if (repo.language) {
       tech.push(repo.language);
     }
     for (const topic of repo.topics || []) {
-      // Capitalize topic for display
       const display = topic
         .split("-")
         .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
@@ -111,8 +114,6 @@ export function generateProjectCards(ownedRepos: RepoData[]): ProjectCard[] {
     });
   }
 
-  // Sort by stars descending
   cards.sort((a, b) => b.stars - a.stars);
-
   return cards;
 }

@@ -1,0 +1,104 @@
+---
+interface ChartItem {
+  name: string;
+  count: number;
+  color?: string;
+}
+
+interface Props {
+  title: string;
+  items: ChartItem[];
+  maxItems?: number;
+}
+
+const { title, items, maxItems = 10 } = Astro.props;
+const displayItems = items.slice(0, maxItems);
+const maxCount = Math.max(...displayItems.map((i) => i.count), 1);
+---
+<div class="chart-section">
+  <h3 class="chart-title">{title}</h3>
+  <div class="chart-bars">
+    {displayItems.map((item, index) => (
+      <div class="chart-row">
+        <span class="chart-label">{item.name}</span>
+        <div class="chart-bar-track">
+          <div
+            class="chart-bar-fill"
+            style={`width: ${(item.count / maxCount) * 100}%; background: ${item.color || "rgba(100, 200, 255, 0.5)"};`}
+          />
+        </div>
+        <span class="chart-count">{item.count}</span>
+      </div>
+    ))}
+  </div>
+</div>
+
+<style>
+  .chart-section {
+    padding: 12px 0;
+  }
+
+  .chart-title {
+    font-size: 0.8125rem;
+    font-family: "SF Mono", "Cascadia Code", "Fira Code", Consolas, monospace;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    color: #555;
+    margin: 0 0 10px;
+    font-weight: 500;
+  }
+
+  .chart-bars {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+
+  .chart-row {
+    display: grid;
+    grid-template-columns: 8rem 1fr 2.5rem;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .chart-label {
+    font-size: 0.8125rem;
+    color: #ccc;
+    font-family: "SF Mono", "Cascadia Code", "Fira Code", Consolas, monospace;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    text-align: right;
+  }
+
+  .chart-bar-track {
+    height: 14px;
+    background: rgba(255, 255, 255, 0.03);
+    border-radius: 3px;
+    overflow: hidden;
+  }
+
+  .chart-bar-fill {
+    height: 100%;
+    border-radius: 3px;
+    min-width: 2px;
+    transition: width 0.3s ease;
+  }
+
+  .chart-count {
+    font-size: 0.8125rem;
+    color: #666;
+    font-family: "SF Mono", "Cascadia Code", "Fira Code", Consolas, monospace;
+    text-align: right;
+  }
+
+  @media (max-width: 480px) {
+    .chart-row {
+      grid-template-columns: 5rem 1fr 2rem;
+    }
+
+    .chart-label {
+      font-size: 0.8125rem;
+    }
+  }
+</style>

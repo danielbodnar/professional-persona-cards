@@ -58,7 +58,7 @@ function buildPersonaRefs(profile: any): { id: string; shortTitle: string; accen
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <meta name="theme-color" content="#08080c" />
   <meta name="color-scheme" content="dark" />
-  <title>{username} — Identity Deck Embed</title>
+  <title>{username} — profiles.sh Embed</title>
   <style is:global>
     @import "../../styles/global.css";
   </style>
@@ -80,7 +80,7 @@ function buildPersonaRefs(profile: any): { id: string; shortTitle: string; accen
     .embed-error {
       text-align: center;
       padding: 24px;
-      font-size: 10px;
+      font-size: 0.8125rem;
       color: #666;
       font-family: "SF Mono", "Cascadia Code", "Fira Code", Consolas, monospace;
     }
@@ -91,7 +91,7 @@ function buildPersonaRefs(profile: any): { id: string; shortTitle: string; accen
     }
 
     .embed-footer a {
-      font-size: 7px;
+      font-size: 0.8125rem;
       color: #444;
       font-family: "SF Mono", "Cascadia Code", "Fira Code", Consolas, monospace;
       text-decoration: none;
@@ -160,7 +160,7 @@ function buildPersonaRefs(profile: any): { id: string; shortTitle: string; accen
   })}
 
   <div class="embed-footer">
-    <a href={`/${username}`} target="_blank" rel="noopener">View full Identity Deck &rarr;</a>
+    <a href={`/${username}`} target="_blank" rel="noopener">View full profiles.sh &rarr;</a>
   </div>
 
   <script>

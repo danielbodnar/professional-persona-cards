@@ -1,13 +1,13 @@
 /**
- * KV-based rate limiter: 1 refresh per hour per username.
+ * KV-based rate limiter: 1 refresh per window per username.
  *
  * Uses KV with expiration TTL instead of Durable Objects for
  * compatibility with the Astro Cloudflare adapter.
  *
- * Reference: spec lines 948-973.
+ * Window is configurable via `windowSeconds` (default 3600 = 1 hour).
  */
 
-const ONE_HOUR_SECONDS = 3600;
+const DEFAULT_WINDOW_SECONDS = 3600;
 
 export interface RateLimitResult {
   allowed: boolean;
@@ -20,6 +20,7 @@ export interface RateLimitResult {
 export async function checkRateLimit(
   kv: KVNamespace,
   username: string,
+  windowSeconds = DEFAULT_WINDOW_SECONDS,
 ): Promise<RateLimitResult> {
   const key = `ratelimit:${username}`;
   const existing = await kv.get(key);
@@ -28,8 +29,8 @@ export async function checkRateLimit(
     const lastRefresh = parseInt(existing, 10);
     const elapsedSeconds = Math.floor((Date.now() - lastRefresh) / 1000);
 
-    if (elapsedSeconds < ONE_HOUR_SECONDS) {
-      return { allowed: false, retryAfter: ONE_HOUR_SECONDS - elapsedSeconds };
+    if (elapsedSeconds < windowSeconds) {
+      return { allowed: false, retryAfter: windowSeconds - elapsedSeconds };
     }
   }
 
@@ -38,12 +39,13 @@ export async function checkRateLimit(
 
 /**
  * Consume a rate limit token for the given username.
- * Sets a KV key with a 1-hour expiration TTL.
+ * Sets a KV key with an expiration TTL matching the window.
  */
 export async function consumeRateLimit(
   kv: KVNamespace,
   username: string,
+  windowSeconds = DEFAULT_WINDOW_SECONDS,
 ): Promise<void> {
   const key = `ratelimit:${username}`;
-  await kv.put(key, String(Date.now()), { expirationTtl: ONE_HOUR_SECONDS });
+  await kv.put(key, String(Date.now()), { expirationTtl: windowSeconds });
 }

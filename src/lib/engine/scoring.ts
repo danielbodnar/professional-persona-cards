@@ -1,4 +1,5 @@
-import { DOMAIN_SIGNALS } from "./domain-signals";
+import type { Category } from "./category-seeds";
+import { CATEGORY_SEEDS } from "./category-seeds";
 
 export interface RepoData {
   full_name: string;
@@ -10,24 +11,57 @@ export interface RepoData {
   html_url?: string;
 }
 
+/** Score a single repo against a single category's signals. */
+function scoreRepo(
+  lang: string,
+  topics: string[],
+  desc: string,
+  name: string,
+  cat: Category,
+): number {
+  let score = 0;
+
+  // Language match: +2 points
+  if (cat.languages.some((l) => l.toLowerCase() === lang)) {
+    score += 2;
+  }
+
+  // Topic match: +3 points per matching topic (fuzzy: bidirectional includes)
+  const topicMatches = topics.filter((t) =>
+    cat.topics.some((st) => t.includes(st) || st.includes(t)),
+  ).length;
+  score += topicMatches * 3;
+
+  // Description keyword match: +1.5 per keyword
+  const descMatches = cat.keywords.filter((kw) => desc.includes(kw)).length;
+  score += descMatches * 1.5;
+
+  // Repo name match: +1 per keyword
+  const nameMatches = cat.keywords.filter((kw) => name.includes(kw)).length;
+  score += nameMatches * 1;
+
+  return score;
+}
+
 /**
- * Compute raw domain scores from starred and owned repos.
+ * Compute raw category scores from starred and owned repos.
  *
- * Scoring per repo per domain:
+ * Accepts an optional categories array; defaults to CATEGORY_SEEDS.
+ * Same scoring formula as the original domain system:
  *   - Language match: +2 points
- *   - Topic match: +3 points per matching topic (fuzzy: `includes` both directions)
+ *   - Topic match: +3 points per matching topic
  *   - Description keyword match: +1.5 per keyword
  *   - Repo name keyword match: +1 per keyword
- *
- * Owned repos receive a 3x multiplier on their per-repo score.
+ *   - Owned repos receive a 3x multiplier
  */
-export function computeDomainScores(
+export function computeCategoryScores(
   stars: RepoData[],
   ownedRepos: RepoData[],
+  categories: Category[] = CATEGORY_SEEDS,
 ): Record<string, number> {
   const scores: Record<string, number> = {};
-  for (const domain of Object.keys(DOMAIN_SIGNALS)) {
-    scores[domain] = 0;
+  for (const cat of categories) {
+    scores[cat.id] = 0;
   }
 
   for (const repo of stars) {
@@ -36,33 +70,8 @@ export function computeDomainScores(
     const desc = (repo.description || "").toLowerCase();
     const name = (repo.full_name || "").toLowerCase();
 
-    for (const [domain, signals] of Object.entries(DOMAIN_SIGNALS)) {
-      let repoScore = 0;
-
-      // Language match: +2 points
-      if (signals.languages.some((l) => l.toLowerCase() === lang)) {
-        repoScore += 2;
-      }
-
-      // Topic match: +3 points per matching topic
-      const topicMatches = topics.filter((t) =>
-        signals.topics.some((st) => t.includes(st) || st.includes(t)),
-      ).length;
-      repoScore += topicMatches * 3;
-
-      // Description keyword match: +1.5 per keyword
-      const descMatches = signals.descriptionKeywords.filter((kw) =>
-        desc.includes(kw),
-      ).length;
-      repoScore += descMatches * 1.5;
-
-      // Repo name match: +1 per keyword
-      const nameMatches = signals.descriptionKeywords.filter((kw) =>
-        name.includes(kw),
-      ).length;
-      repoScore += nameMatches * 1;
-
-      scores[domain] += repoScore;
+    for (const cat of categories) {
+      scores[cat.id] += scoreRepo(lang, topics, desc, name, cat);
     }
   }
 
@@ -73,30 +82,8 @@ export function computeDomainScores(
     const desc = (repo.description || "").toLowerCase();
     const name = (repo.full_name || "").toLowerCase();
 
-    for (const [domain, signals] of Object.entries(DOMAIN_SIGNALS)) {
-      let repoScore = 0;
-
-      if (signals.languages.some((l) => l.toLowerCase() === lang)) {
-        repoScore += 2;
-      }
-
-      const topicMatches = topics.filter((t) =>
-        signals.topics.some((st) => t.includes(st) || st.includes(t)),
-      ).length;
-      repoScore += topicMatches * 3;
-
-      const descMatches = signals.descriptionKeywords.filter((kw) =>
-        desc.includes(kw),
-      ).length;
-      repoScore += descMatches * 1.5;
-
-      // Repo name match: +1 per keyword
-      const nameMatches = signals.descriptionKeywords.filter((kw) =>
-        name.includes(kw),
-      ).length;
-      repoScore += nameMatches * 1;
-
-      scores[domain] += repoScore * 3; // 3x multiplier for owned repos
+    for (const cat of categories) {
+      scores[cat.id] += scoreRepo(lang, topics, desc, name, cat) * 3;
     }
   }
 
@@ -104,7 +91,7 @@ export function computeDomainScores(
 }
 
 /**
- * Normalize raw domain scores to a 40-100 radar range.
+ * Normalize raw scores to a 40-100 radar range.
  *
  * - If all scores are 0, return unchanged.
  * - If score > 0: Math.round(40 + (score / max) * 60)
@@ -118,12 +105,47 @@ export function normalizeToRadar(
   if (max === 0) return scores;
 
   const normalized: Record<string, number> = {};
-  for (const [domain, score] of Object.entries(scores)) {
+  for (const [id, score] of Object.entries(scores)) {
     if (score > 0) {
-      normalized[domain] = Math.round(40 + (score / max) * 60);
+      normalized[id] = Math.round(40 + (score / max) * 60);
     } else {
-      normalized[domain] = 0;
+      normalized[id] = 0;
     }
   }
   return normalized;
 }
+
+/**
+ * Compute category scores from owned repos only (no star influence).
+ *
+ * Used for persona determination — personas represent what you BUILD,
+ * not what you star. Stars drive interests separately.
+ */
+export function computeOwnedRepoScores(
+  ownedRepos: RepoData[],
+  categories: Category[] = CATEGORY_SEEDS,
+): Record<string, number> {
+  const scores: Record<string, number> = {};
+  for (const cat of categories) {
+    scores[cat.id] = 0;
+  }
+
+  for (const repo of ownedRepos) {
+    const lang = (repo.language || "").toLowerCase();
+    const topics = (repo.topics || []).map((t) => t.toLowerCase());
+    const desc = (repo.description || "").toLowerCase();
+    const name = (repo.full_name || "").toLowerCase();
+
+    for (const cat of categories) {
+      scores[cat.id] += scoreRepo(lang, topics, desc, name, cat);
+    }
+  }
+
+  return scores;
+}
+
+/**
+ * @deprecated Use computeCategoryScores instead.
+ * Kept for backward compatibility during transition.
+ */
+export const computeDomainScores = computeCategoryScores;

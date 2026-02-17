@@ -1,7 +1,7 @@
 // Re-export everything for convenient access
 export { DOMAIN_SIGNALS } from "./domain-signals";
 export type { DomainSignal } from "./domain-signals";
-export { computeDomainScores, normalizeToRadar } from "./scoring";
+export { computeCategoryScores, computeDomainScores, computeOwnedRepoScores, normalizeToRadar } from "./scoring";
 export type { RepoData } from "./scoring";
 export {
   PERSONA_THRESHOLD,
@@ -16,12 +16,16 @@ export { mapRepoToPersonas, generateProjectCards } from "./projects";
 export type { ProjectCard } from "./projects";
 export { estimateExperience } from "./experience";
 export type { ExperienceLevel } from "./experience";
+export { CATEGORY_SEEDS, getCategoryById, getCategoriesByGroup } from "./category-seeds";
+export type { Category } from "./category-seeds";
+export { computeAggregates } from "./aggregates";
+export type { Aggregate } from "./aggregates";
 
 // ---------------------------------------------------------------------------
 // Imports for the orchestrator
 // ---------------------------------------------------------------------------
 
-import { computeDomainScores, normalizeToRadar } from "./scoring";
+import { computeCategoryScores, computeOwnedRepoScores, normalizeToRadar } from "./scoring";
 import type { RepoData } from "./scoring";
 import { determinePersonas, generatePersonaDetails } from "./personas";
 import type { PersonaCard, GithubProfile } from "./personas";
@@ -29,6 +33,10 @@ import { clusterStarInterests } from "./interests";
 import type { StarInterestCluster } from "./interests";
 import { generateProjectCards } from "./projects";
 import type { ProjectCard } from "./projects";
+import { computeAggregates } from "./aggregates";
+import type { Aggregate } from "./aggregates";
+import type { Category } from "./category-seeds";
+import { CATEGORY_SEEDS } from "./category-seeds";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -61,39 +69,29 @@ export interface FullProfile {
   projects: ProjectCard[];
   radar_axes: RadarAxis[];
   star_interests: StarInterestCluster[];
+  aggregates: Aggregate[];
 }
-
-// ---------------------------------------------------------------------------
-// Radar axis metadata (label + color per domain)
-// ---------------------------------------------------------------------------
-
-const RADAR_AXIS_META: Record<string, { label: string; color: string }> = {
-  systems: { label: "Rust/Systems", color: "#4A90D9" },
-  platform: { label: "Platform/IaC", color: "#7C4DFF" },
-  software: { label: "TypeScript/JS", color: "#00E676" },
-  cloud: { label: "Cloud/Infra", color: "#40C4FF" },
-  linux: { label: "Linux/Desktop", color: "#FFEB3B" },
-  solutions: { label: "Solutions", color: "#FF9800" },
-  sre: { label: "Security", color: "#FF5252" },
-  tinkerer: { label: "AI/LLM", color: "#FFD54F" },
-  hacker: { label: "Neovim/Editor", color: "#00FF41" },
-};
 
 // ---------------------------------------------------------------------------
 // Main orchestrator
 // ---------------------------------------------------------------------------
 
 /**
- * Compute the full Identity Deck profile from raw GitHub data.
+ * Compute the full profiles.sh profile from raw GitHub data.
  *
- * Chains all 7 steps:
- *   1. computeDomainScores  — raw scores from stars + owned repos
- *   2. normalizeToRadar     — scale to 40-100 range
- *   3. determinePersonas    — active persona list (>= threshold)
- *   4. clusterStarInterests — star interest groups
- *   5. generatePersonaDetails — full persona card data
- *   6. generateProjectCards — project cards with persona mapping
- *   7. Build radar axes     — from normalized scores with colors/labels
+ * Chains all steps:
+ *   1a. computeOwnedRepoScores — scores from owned repos only (for persona identity)
+ *   1b. computeCategoryScores  — combined scores from stars + owned (for radar footprint)
+ *   2.  normalizeToRadar       — scale to 40-100 range
+ *   3.  determinePersonas      — active persona list from OWNED scores (>= threshold)
+ *   4.  clusterStarInterests   — star interest groups (category-driven)
+ *   5.  generatePersonaDetails — full persona card data (uses owned scores)
+ *   6.  generateProjectCards   — project cards with category mapping
+ *   7.  computeAggregates      — top-10 charts (languages, frameworks, topics, tooling)
+ *   8.  Build radar axes       — from activated personas with COMBINED scores
+ *
+ * Personas represent what you BUILD (owned repos only).
+ * Radar and interests represent your full footprint (stars + owned).
  *
  * ALL functions are pure — no side effects, no network calls.
  */
@@ -101,46 +99,52 @@ export function computeFullProfile(
   githubProfile: GithubProfile,
   ownedRepos: RepoData[],
   stars: RepoData[],
+  categories: Category[] = CATEGORY_SEEDS,
 ): FullProfile {
-  // Step 1: Compute raw domain scores
-  const rawScores = computeDomainScores(stars, ownedRepos);
+  // Step 1a: Owned-only scores — drives persona identity (what you build)
+  const ownedRawScores = computeOwnedRepoScores(ownedRepos, categories);
+  const ownedNormalized = normalizeToRadar(ownedRawScores);
 
-  // Step 2: Normalize to 0-100 radar values
-  const normalizedScores = normalizeToRadar(rawScores);
+  // Step 1b: Combined scores — drives radar chart (full footprint)
+  const combinedRawScores = computeCategoryScores(stars, ownedRepos, categories);
+  const combinedNormalized = normalizeToRadar(combinedRawScores);
 
-  // Step 3: Determine active personas
-  const activePersonas = determinePersonas(normalizedScores);
+  // Step 3: Determine active personas from OWNED scores only
+  const activePersonas = determinePersonas(ownedNormalized);
 
-  // Step 4: Cluster star interests
-  const starInterests = clusterStarInterests(stars);
+  // Step 4: Cluster star interests using categories
+  const starInterests = clusterStarInterests(stars, categories);
 
-  // Find the maximum normalized score for experience estimation
-  const normalizedValues = Object.values(normalizedScores);
-  const maxScore = Math.max(...normalizedValues, 1); // avoid division by zero
+  // Find the maximum owned normalized score for experience estimation
+  const ownedValues = Object.values(ownedNormalized);
+  const maxOwnedScore = Math.max(...ownedValues, 1);
 
-  // Step 5: Generate full persona card details
+  // Step 5: Generate full persona card details (owned scores for experience/stats)
   const personas = generatePersonaDetails(
     activePersonas,
-    normalizedScores,
+    ownedNormalized,
     stars,
     ownedRepos,
     githubProfile,
-    maxScore,
+    maxOwnedScore,
   );
 
   // Step 6: Generate project cards
-  const projects = generateProjectCards(ownedRepos);
+  const projects = generateProjectCards(ownedRepos, categories);
 
-  // Step 7: Build radar axes from normalized scores
-  const radarAxes: RadarAxis[] = Object.entries(normalizedScores)
-    .filter(([domain]) => RADAR_AXIS_META[domain] !== undefined)
-    .map(([domain, value], index) => {
-      const meta = RADAR_AXIS_META[domain];
+  // Step 7: Compute top-10 aggregates
+  const aggregates = computeAggregates(ownedRepos, stars);
+
+  // Step 8: Build radar axes — use COMBINED scores for the visual footprint
+  const radarAxes: RadarAxis[] = activePersonas
+    .slice(0, 9)
+    .map((ap, index) => {
+      const cat = categories.find((c) => c.id === ap.persona_id);
       return {
-        label: meta.label,
-        value,
-        color: meta.color,
-        domain,
+        label: cat?.title || ap.persona_id,
+        value: combinedNormalized[ap.persona_id] || 0,
+        color: cat?.accentColor || "#888888",
+        domain: ap.persona_id,
         sort_order: index,
       };
     });
@@ -164,5 +168,6 @@ export function computeFullProfile(
     projects,
     radar_axes: radarAxes,
     star_interests: starInterests,
+    aggregates,
   };
 }

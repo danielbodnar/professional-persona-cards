@@ -1,14 +1,16 @@
 {
   "$schema": "./node_modules/wrangler/config-schema.json",
-  "name": "identity-deck",
+  "name": "profiles-sh",
   "account_id": "5dae265f74e6077ad674a3d855bf9853",
   "main": "dist/_worker.js/index.js",
   "assets": {
     "directory": "dist",
     "binding": "ASSETS"
   },
-  "compatibility_date": "2026-01-20",
+  "compatibility_date": "2026-02-16",
   "compatibility_flags": ["nodejs_compat"],
+  "workers_dev": true,
+  "preview_urls": true,
   "observability": {
     "enabled": true,
     "head_sampling_rate": 1,
@@ -19,8 +21,16 @@
     }
   },
   "vars": {
-    "ENVIRONMENT": "production"
+    "ENVIRONMENT": "production",
+    "MAX_STAR_PAGES": "170"
   },
+
+  // Custom domain: profiles.sh + wildcard subdomains (*.profiles.sh)
+  // Requires profiles.sh zone active on this Cloudflare account with proxied DNS records
+  "routes": [
+    { "pattern": "profiles.sh/*", "zone_name": "profiles.sh" },
+    { "pattern": "*.profiles.sh/*", "zone_name": "profiles.sh" }
+  ],
 
   // KV — GitHub API response cache (24h TTL) + Astro sessions
   "kv_namespaces": [
@@ -63,5 +73,18 @@
         "queue": "profile-computation"
       }
     ]
+  },
+
+  // Vectorize — Semantic search index for starred/owned repos
+  "vectorize": [
+    {
+      "binding": "VECTORIZE",
+      "index_name": "repo-embeddings"
+    }
+  ],
+
+  // Workers AI — Embedding generation for Vectorize
+  "ai": {
+    "binding": "AI"
   }
 }
