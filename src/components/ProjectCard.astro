@@ -20,11 +20,11 @@ const { name, description, url, tech, personaMap, personas } = Astro.props;
 const stripeColors = personaMap
   .map((pid) => {
     const found = personas.find((p) => p.id === pid);
-    return found?.accent ?? "#888";
+    return found?.accent ?? null;
   })
-  .filter(Boolean);
+  .filter(Boolean) as string[];
 
-const stripeH = 100 / stripeColors.length;
+const stripeH = 100 / (stripeColors.length || 1);
 const stripeGrad = stripeColors
   .map((c, i) => `${c} ${i * stripeH}%, ${c} ${(i + 1) * stripeH}%`)
   .join(", ");

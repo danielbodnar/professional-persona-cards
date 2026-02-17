@@ -1,5 +1,8 @@
 import { defineMiddleware } from "astro:middleware";
 
+// Reserved subdomains that should NOT be rewritten to user profile routes.
+// These fall through to next() and are handled by normal Astro routing,
+// allowing future API/CDN subdomains without conflicting with user profiles.
 const RESERVED = new Set(["www", "api", "cdn", "static"]);
 const PRODUCTION_DOMAIN = "profiles.sh";
 
@@ -15,6 +18,7 @@ export const onRequest = defineMiddleware(async (ctx, next) => {
   const parts = url.hostname.split(".");
 
   // Detect subdomain: e.g. "danielbodnar.profiles.sh" -> sub = "danielbodnar"
+  // Reserved subdomains (www, api, cdn, static) pass through to standard routing
   if (parts.length >= 3) {
     const sub = parts[0].toLowerCase();
     if (!RESERVED.has(sub) && sub.length > 0) {
