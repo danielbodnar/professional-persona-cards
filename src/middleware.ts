@@ -1,9 +1,17 @@
 import { defineMiddleware } from "astro:middleware";
 
 const RESERVED = new Set(["www", "api", "cdn", "static"]);
+const PRODUCTION_DOMAIN = "profiles.sh";
 
 export const onRequest = defineMiddleware(async (ctx, next) => {
   const url = new URL(ctx.request.url);
+
+  // Only apply subdomain routing on the production domain (e.g. danielbodnar.profiles.sh)
+  // Skip on *.workers.dev, localhost, and other non-production hosts
+  if (!url.hostname.endsWith(PRODUCTION_DOMAIN)) {
+    return next();
+  }
+
   const parts = url.hostname.split(".");
 
   // Detect subdomain: e.g. "danielbodnar.profiles.sh" -> sub = "danielbodnar"
