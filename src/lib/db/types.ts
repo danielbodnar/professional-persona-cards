@@ -58,6 +58,7 @@ export interface ProjectRow {
   stars: number | null;
   forks: number | null;
   sort_order: number | null;
+  readme_excerpt: string | null;
 }
 
 /** Row from the `radar_axes` table */

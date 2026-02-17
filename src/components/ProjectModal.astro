@@ -14,9 +14,10 @@ interface Props {
   tech: string[];
   personaMap: string[];
   personas: PersonaRef[];
+  readmeExcerpt?: string | null;
 }
 
-const { name, description, url, tech, personaMap, personas } = Astro.props;
+const { name, description, url, tech, personaMap, personas, readmeExcerpt } = Astro.props;
 
 const stripeColors = personaMap
   .map((pid) => {
@@ -50,6 +51,13 @@ const personaLegend = personaMap
             <a href={url} target="_blank" rel="noopener noreferrer" class="pm-url">
               {url.replace(/^https?:\/\//, "")} &rarr;
             </a>
+          )}
+
+          {readmeExcerpt && (
+            <Fragment>
+              <div class="pm-section-label">README</div>
+              <div class="pm-readme">{readmeExcerpt}</div>
+            </Fragment>
           )}
 
           <div class="pm-section-label">Tech</div>
@@ -160,6 +168,22 @@ const personaLegend = personaMap
     text-transform: uppercase;
     letter-spacing: 1.5px;
     margin-bottom: 5px;
+  }
+
+  .pm-readme {
+    font-size: 0.75rem;
+    font-family: "SF Mono", "Cascadia Code", "Fira Code", Consolas, monospace;
+    color: #999;
+    line-height: 1.5;
+    max-height: 12rem;
+    overflow-y: auto;
+    white-space: pre-wrap;
+    word-break: break-word;
+    margin-bottom: 12px;
+    padding: 8px;
+    background: rgba(255, 255, 255, 0.02);
+    border-radius: 4px;
+    border: 1px solid rgba(255, 255, 255, 0.05);
   }
 
   .pm-tech {

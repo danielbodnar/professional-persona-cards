@@ -9,9 +9,12 @@
  *   - per_page configurable (default 100)
  */
 
-import type { GitHubProfile, GitHubRepo, StarsMeta } from "./types";
+import type { GitHubProfile, GitHubRepo, GitHubStarEntry, StarsMeta } from "./types";
 import { getCached, putCached } from "./cache";
 import type { AppConfig } from "../config";
+import { putRepoObject, getRepoObject } from "../r2/repo-store";
+import { getStarManifest, putStarManifest } from "../r2/star-manifest";
+import type { StarManifest } from "../r2/star-manifest";
 
 const GITHUB_API = "https://api.github.com";
 const USER_AGENT = "ProfilesSh/1.0";
@@ -20,9 +23,9 @@ const USER_AGENT = "ProfilesSh/1.0";
 let tokenInvalid = false;
 
 /** Build auth + accept headers for every GitHub request. */
-function githubHeaders(token?: string): HeadersInit {
+function githubHeaders(token?: string, accept?: string): HeadersInit {
   const headers: Record<string, string> = {
-    Accept: "application/vnd.github.v3+json",
+    Accept: accept ?? "application/vnd.github.v3+json",
     "User-Agent": USER_AGENT,
   };
   if (token && !tokenInvalid) {
@@ -35,14 +38,15 @@ function githubHeaders(token?: string): HeadersInit {
 async function githubFetch(
   url: string,
   token?: string,
+  accept?: string,
 ): Promise<Response> {
-  const res = await fetch(url, { headers: githubHeaders(token) });
+  const res = await fetch(url, { headers: githubHeaders(token, accept) });
 
   if (res.status === 401 && token && !tokenInvalid) {
     // Token is invalid — mark it and retry without auth
     tokenInvalid = true;
     console.warn("[github/client] GITHUB_TOKEN returned 401, falling back to unauthenticated requests");
-    return fetch(url, { headers: githubHeaders() });
+    return fetch(url, { headers: githubHeaders(undefined, accept) });
   }
 
   return res;
@@ -184,6 +188,170 @@ export async function fetchAllStars(
   await putCached(env.KV, `github:stars:${username}:meta`, meta, ttl);
 
   return stars;
+}
+
+/**
+ * Incremental star fetch using R2 as durable cache.
+ *
+ * Uses `Accept: application/vnd.github.star+json` to get `starred_at`
+ * timestamps, sorted newest-first. Stops paginating when we hit a star
+ * older than the last known `starred_at` from the R2 manifest.
+ *
+ * On first run (no manifest), does a full fetch and writes everything to R2.
+ * Returns all GitHubRepo[] (new from API + existing from R2 manifest refs).
+ */
+export async function fetchStarsIncremental(
+  username: string,
+  env: { KV?: KVNamespace; R2?: R2Bucket; GITHUB_TOKEN?: string },
+  config?: Pick<AppConfig, "githubPerPage" | "maxStarPages" | "cacheTtl">,
+): Promise<GitHubRepo[]> {
+  if (!env.R2) {
+    // Fallback to legacy fetch if R2 unavailable
+    return fetchAllStars(username, env, config);
+  }
+
+  const perPage = config?.githubPerPage ?? 100;
+  const maxPages = config?.maxStarPages ?? 50;
+
+  // 1. Read existing manifest from R2
+  const manifest = await getStarManifest(env.R2, username);
+  const lastStarredAt = manifest?.last_starred_at ?? null;
+
+  // 2. Paginate GitHub stars API (newest first)
+  const newRepos: GitHubRepo[] = [];
+  const newRefs: string[] = [];
+  let newestStarredAt = lastStarredAt;
+  let page = 1;
+  let hitExisting = false;
+
+  while (page <= maxPages && !hitExisting) {
+    const url = `${GITHUB_API}/users/${username}/starred?per_page=${perPage}&page=${page}&sort=created&direction=desc`;
+    const res = await githubFetch(url, env.GITHUB_TOKEN, "application/vnd.github.star+json");
+
+    if (res.status === 404) break;
+    if (res.status === 403) throw new Error("GitHub API rate limit exceeded");
+    if (!res.ok) throw new Error(`GitHub API error: ${res.status} ${res.statusText}`);
+
+    const entries: GitHubStarEntry[] = await res.json();
+    if (!entries || entries.length === 0) break;
+
+    for (const entry of entries) {
+      // Early termination: this star is older than our last known
+      if (lastStarredAt && entry.starred_at <= lastStarredAt) {
+        hitExisting = true;
+        break;
+      }
+
+      // Track newest starred_at
+      if (!newestStarredAt || entry.starred_at > newestStarredAt) {
+        newestStarredAt = entry.starred_at;
+      }
+
+      newRepos.push(entry.repo);
+      newRefs.push(entry.repo.full_name);
+
+      // Write repo object to R2 (frontmatter only, no README yet)
+      await putRepoObject(env.R2, entry.repo);
+    }
+
+    if (entries.length < perPage) break;
+    page++;
+  }
+
+  console.log(
+    `[github/client] Stars incremental: ${newRefs.length} new stars fetched in ${page} pages for ${username}`,
+  );
+
+  // 3. Build complete repo list: new repos + existing refs loaded from R2
+  const existingRefs = manifest?.refs ?? [];
+  const allRefs = [...new Set([...newRefs, ...existingRefs])];
+
+  // 4. Update manifest
+  const updatedManifest: StarManifest = {
+    username,
+    last_starred_at: newestStarredAt,
+    total: allRefs.length,
+    fetched_at: new Date().toISOString(),
+    refs: allRefs,
+  };
+  await putStarManifest(env.R2, username, updatedManifest);
+
+  // 5. Return all repos: new ones we already have in memory,
+  //    plus existing ones loaded from R2 (only need the repo data for scoring)
+  const existingOnlyRefs = existingRefs.filter((ref) => !newRefs.includes(ref));
+  const existingRepos = await loadReposFromR2(env.R2, existingOnlyRefs);
+
+  return [...newRepos, ...existingRepos];
+}
+
+/** Load repo objects from R2 by full_name refs, converting back to GitHubRepo shape. */
+async function loadReposFromR2(
+  r2: R2Bucket,
+  refs: string[],
+): Promise<GitHubRepo[]> {
+  const repos: GitHubRepo[] = [];
+  // Process in batches to avoid overwhelming R2
+  const batchSize = 50;
+  for (let i = 0; i < refs.length; i += batchSize) {
+    const batch = refs.slice(i, i + batchSize);
+    const results = await Promise.allSettled(
+      batch.map((ref) => getRepoObject(r2, ref)),
+    );
+    for (const result of results) {
+      if (result.status === "fulfilled" && result.value) {
+        repos.push(repoObjectToGitHubRepo(result.value));
+      }
+    }
+  }
+  return repos;
+}
+
+/** Convert an R2 RepoObject back to the GitHubRepo shape the engine expects. */
+function repoObjectToGitHubRepo(obj: import("../r2/repo-store").RepoObject): GitHubRepo {
+  return {
+    id: 0,
+    full_name: obj.full_name,
+    name: obj.name,
+    owner: { login: obj.owner, avatar_url: "" },
+    html_url: obj.html_url,
+    description: obj.description,
+    fork: false,
+    language: obj.language,
+    stargazers_count: obj.stargazers_count,
+    watchers_count: 0,
+    forks_count: obj.forks_count,
+    open_issues_count: 0,
+    topics: obj.topics,
+    created_at: obj.created_at,
+    updated_at: obj.created_at,
+    pushed_at: obj.pushed_at,
+    homepage: null,
+    archived: obj.archived,
+    disabled: false,
+    license: obj.license ? { key: obj.license, name: obj.license, spdx_id: obj.license } : null,
+  };
+}
+
+/**
+ * Fetch raw README content for a repo.
+ * Returns null on 404 (no README) or error.
+ */
+export async function fetchReadme(
+  fullName: string,
+  env: { GITHUB_TOKEN?: string },
+): Promise<string | null> {
+  try {
+    const res = await githubFetch(
+      `${GITHUB_API}/repos/${fullName}/readme`,
+      env.GITHUB_TOKEN,
+      "application/vnd.github.v3.raw",
+    );
+
+    if (!res.ok) return null;
+    return await res.text();
+  } catch {
+    return null;
+  }
 }
 
 // ---------------------------------------------------------------------------

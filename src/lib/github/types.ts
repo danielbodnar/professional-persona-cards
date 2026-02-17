@@ -61,3 +61,12 @@ export interface StarsMeta {
   fetchedAt: string;
   complete: boolean;
 }
+
+/**
+ * Entry returned by GitHub stars API when using `Accept: application/vnd.github.star+json`.
+ * Wraps each repo with its `starred_at` timestamp.
+ */
+export interface GitHubStarEntry {
+  starred_at: string;
+  repo: GitHubRepo;
+}

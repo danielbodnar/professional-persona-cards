@@ -73,5 +73,18 @@
         "queue": "profile-computation"
       }
     ]
+  },
+
+  // Vectorize — Semantic search index for starred/owned repos
+  "vectorize": [
+    {
+      "binding": "VECTORIZE",
+      "index_name": "repo-embeddings"
+    }
+  ],
+
+  // Workers AI — Embedding generation for Vectorize
+  "ai": {
+    "binding": "AI"
   }
 }

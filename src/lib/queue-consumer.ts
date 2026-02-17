@@ -12,7 +12,10 @@
  * Reference: spec lines 910-940.
  */
 
-import { fetchProfile, fetchRepos, fetchAllStars, filterActiveRepos } from "./github/client";
+import { fetchProfile, fetchRepos, fetchStarsIncremental, fetchReadme, filterActiveRepos } from "./github/client";
+import { putRepoObject } from "./r2/repo-store";
+import { putRepoManifest } from "./r2/repo-manifest";
+import { indexRepos } from "./vectorize/indexer";
 import {
   upsertProfile,
   upsertPersonas,
@@ -71,17 +74,50 @@ export async function processUsername(
   env: Env,
   config?: AppConfig,
 ): Promise<void> {
-  // 1. Fetch GitHub data (cached in KV)
+  // 1. Fetch GitHub data (R2 incremental for stars, KV cached for profile/repos)
   const [githubProfile, rawRepos, rawStars] = await Promise.all([
     fetchProfile(username, env, config),
     fetchRepos(username, env, config),
-    fetchAllStars(username, env, config),
+    fetchStarsIncremental(username, env, config),
   ]);
+
+  // One-time cleanup: remove old per-page KV star keys
+  await cleanupLegacyStarKeys(username, env.KV);
 
   // 2. Filter out archived + inactive repos
   const inactiveYears = config?.inactiveYears ?? 3;
   const repos = filterActiveRepos(rawRepos, inactiveYears);
   const stars = filterActiveRepos(rawStars, inactiveYears);
+
+  // 2b. Store owned repos in R2 + fetch READMEs (non-fatal)
+  const readmeMap = new Map<string, string>();
+  if (env.R2) {
+    try {
+      // Fetch READMEs with concurrency limiting (5 at a time)
+      const readmeResults = await batchProcess(
+        repos,
+        async (repo) => {
+          const readme = await fetchReadme(repo.full_name, env);
+          await putRepoObject(env.R2!, repo, readme);
+          return { fullName: repo.full_name, readme };
+        },
+        5,
+      );
+      for (const { fullName, readme } of readmeResults) {
+        if (readme) readmeMap.set(fullName, readme);
+      }
+
+      // Write repo manifest
+      await putRepoManifest(env.R2, username, {
+        username,
+        total: repos.length,
+        fetched_at: new Date().toISOString(),
+        refs: repos.map((r) => r.full_name),
+      });
+    } catch (err) {
+      console.warn(`[queue-consumer] R2 repo storage failed for ${username}:`, err);
+    }
+  }
 
   // 3. Run persona engine (deterministic — no AI/LLM)
   const computed = computeFullProfile(githubProfile, repos, stars);
@@ -145,6 +181,7 @@ export async function processUsername(
     stars: p.stars,
     forks: p.forks,
     sort_order: i,
+    readme_excerpt: truncateReadme(readmeMap.get(p.name) ?? readmeMap.get(`${username}/${p.name}`) ?? null),
   }));
 
   const radarRows = computed.radar_axes.map((a) => ({
@@ -193,6 +230,68 @@ export async function processUsername(
     await generateOGImage(profileRow, personaRows, env);
   } catch (err) {
     console.warn(`[queue-consumer] OG image generation failed for ${username}:`, err);
+  }
+
+  // 9. Index repos into Vectorize for semantic search (non-fatal)
+  if (env.AI && env.VECTORIZE) {
+    try {
+      const allRepos = [...repos, ...stars];
+      await indexRepos(env.AI, env.VECTORIZE, allRepos, username, readmeMap);
+    } catch (err) {
+      console.warn(`[queue-consumer] Vectorize indexing failed for ${username}:`, err);
+    }
+  }
+}
+
+/** Truncate README to ~2000 chars at a paragraph boundary. */
+function truncateReadme(readme: string | null, maxLen = 2000): string | null {
+  if (!readme) return null;
+  if (readme.length <= maxLen) return readme;
+  const cut = readme.lastIndexOf("\n\n", maxLen);
+  return readme.slice(0, cut > 0 ? cut : maxLen) + "\n\n\u2026";
+}
+
+/** Process items in parallel batches with concurrency limit. */
+async function batchProcess<T, R>(
+  items: T[],
+  fn: (item: T) => Promise<R>,
+  concurrency: number,
+): Promise<R[]> {
+  const results: R[] = [];
+  for (let i = 0; i < items.length; i += concurrency) {
+    const batch = items.slice(i, i + concurrency);
+    const settled = await Promise.allSettled(batch.map(fn));
+    for (const r of settled) {
+      if (r.status === "fulfilled") results.push(r.value);
+    }
+  }
+  return results;
+}
+
+/**
+ * Remove legacy per-page KV star keys from before the R2 migration.
+ * Runs once per user — checks for the meta key and deletes all pages + meta.
+ */
+async function cleanupLegacyStarKeys(
+  username: string,
+  kv?: KVNamespace,
+): Promise<void> {
+  if (!kv) return;
+  try {
+    const metaKey = `github:stars:${username}:meta`;
+    const meta = await kv.get(metaKey, "json");
+    if (!meta) return; // Already cleaned up or never existed
+
+    // Delete page keys + meta key
+    const totalPages = (meta as { totalPages?: number }).totalPages ?? 0;
+    const keysToDelete = [metaKey];
+    for (let p = 1; p <= totalPages; p++) {
+      keysToDelete.push(`github:stars:${username}:${p}`);
+    }
+    await Promise.allSettled(keysToDelete.map((k) => kv.delete(k)));
+    console.log(`[queue-consumer] Cleaned up ${keysToDelete.length} legacy KV star keys for ${username}`);
+  } catch (err) {
+    console.warn(`[queue-consumer] Legacy KV cleanup failed for ${username}:`, err);
   }
 }
 

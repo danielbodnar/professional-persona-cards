@@ -165,8 +165,8 @@ export async function upsertProjects(
       .prepare(
         `INSERT INTO projects (
           username, name, description, url, tech, persona_map,
-          language, stars, forks, sort_order
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          language, stars, forks, sort_order, readme_excerpt
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       )
       .bind(
         username,
@@ -179,6 +179,7 @@ export async function upsertProjects(
         p.stars,
         p.forks,
         p.sort_order,
+        p.readme_excerpt ?? null,
       )
       .run();
   }
