@@ -12,7 +12,7 @@
  * Reference: spec lines 910-940.
  */
 
-import { fetchProfile, fetchRepos, fetchAllStars } from "./github/client";
+import { fetchProfile, fetchRepos, fetchAllStars, filterActiveRepos } from "./github/client";
 import {
   upsertProfile,
   upsertPersonas,
@@ -23,7 +23,8 @@ import {
 import type { ProfileRow } from "./db/types";
 import { generateOGImage } from "./og/generator";
 import { computeFullProfile } from "./engine/index";
-import type { FullProfile } from "./engine/index";
+import { resolveConfig } from "./config";
+import type { AppConfig } from "./config";
 
 /** Shape of messages produced by the API layer onto PROFILE_QUEUE. */
 export interface QueueMessage {
@@ -43,10 +44,12 @@ export async function handleQueueBatch(
   batch: MessageBatch<QueueMessage>,
   env: Env,
 ): Promise<void> {
+  const config = resolveConfig(env as unknown as Record<string, string | undefined>);
+
   for (const msg of batch.messages) {
     try {
       const { username } = msg.body;
-      await processUsername(username, env);
+      await processUsername(username, env, config);
       msg.ack();
     } catch (err) {
       console.error(
@@ -60,20 +63,29 @@ export async function handleQueueBatch(
 
 /**
  * Full pipeline for a single username:
- *   GitHub fetch -> persona engine -> transform -> D1 persist -> OG image.
+ *   GitHub fetch -> filter -> persona engine -> transform -> D1 persist -> OG image.
  */
-export async function processUsername(username: string, env: Env): Promise<void> {
+export async function processUsername(
+  username: string,
+  env: Env,
+  config?: AppConfig,
+): Promise<void> {
   // 1. Fetch GitHub data (cached in KV)
-  const [githubProfile, repos, stars] = await Promise.all([
-    fetchProfile(username, env),
-    fetchRepos(username, env),
-    fetchAllStars(username, env),
+  const [githubProfile, rawRepos, rawStars] = await Promise.all([
+    fetchProfile(username, env, config),
+    fetchRepos(username, env, config),
+    fetchAllStars(username, env, config),
   ]);
 
-  // 2. Run persona engine (deterministic — no AI/LLM)
-  const computed: FullProfile = computeFullProfile(githubProfile, repos, stars);
+  // 2. Filter out archived + inactive repos
+  const inactiveYears = config?.inactiveYears ?? 3;
+  const repos = filterActiveRepos(rawRepos, inactiveYears);
+  const stars = filterActiveRepos(rawStars, inactiveYears);
 
-  // 3. Build a simple hash of raw data to detect changes on next run
+  // 3. Run persona engine (deterministic — no AI/LLM)
+  const computed = computeFullProfile(githubProfile, repos, stars);
+
+  // 4. Build a simple hash of raw data to detect changes on next run
   const githubDataHash = simpleHash(
     JSON.stringify({
       login: githubProfile.login,
@@ -84,7 +96,7 @@ export async function processUsername(username: string, env: Env): Promise<void>
     }),
   );
 
-  // 4. Build profile row
+  // 5. Build profile row
   const profileRow: ProfileRow = {
     username: githubProfile.login,
     display_name: githubProfile.name,
@@ -103,7 +115,7 @@ export async function processUsername(username: string, env: Env): Promise<void>
     raw_profile: JSON.stringify(githubProfile),
   };
 
-  // 5. Transform engine output to D1 row shapes
+  // 6. Transform engine output to D1 row shapes
   const personaRows = computed.personas.map((p) => ({
     persona_id: p.persona_id,
     title: p.title,
@@ -148,21 +160,28 @@ export async function processUsername(username: string, env: Env): Promise<void>
     sort_order: i,
   }));
 
-  // 6. Write everything to D1
-  await upsertProfile(env.DB, profileRow);
-  await Promise.all([
-    upsertPersonas(env.DB, username, personaRows),
-    upsertProjects(env.DB, username, projectRows),
-    upsertRadarAxes(env.DB, username, radarRows),
-    upsertStarInterests(env.DB, username, interestRows),
-  ]);
+  // 7. Write everything to D1 (skip gracefully if DB unavailable)
+  if (env.DB) {
+    try {
+      await upsertProfile(env.DB, profileRow);
+      await Promise.all([
+        upsertPersonas(env.DB, username, personaRows),
+        upsertProjects(env.DB, username, projectRows),
+        upsertRadarAxes(env.DB, username, radarRows),
+        upsertStarInterests(env.DB, username, interestRows),
+      ]);
+    } catch (err) {
+      console.warn(`[queue-consumer] D1 write failed for ${username}:`, err);
+    }
+  } else {
+    console.warn(`[queue-consumer] D1 unavailable, skipping persistence for ${username}`);
+  }
 
-  // 7. Generate OG image (stores in R2)
+  // 8. Generate OG image (stores in R2, non-fatal)
   try {
     await generateOGImage(profileRow, personaRows, env);
   } catch (err) {
-    // OG image generation failure should not fail the whole pipeline
-    console.error(`[queue-consumer] OG image generation failed for ${username}:`, err);
+    console.warn(`[queue-consumer] OG image generation failed for ${username}:`, err);
   }
 }
 

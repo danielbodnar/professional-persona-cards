@@ -5,13 +5,13 @@
     "": {
       "name": "identity-deck",
       "dependencies": {
-        "@astrojs/cloudflare": "latest",
-        "astro": "latest",
+        "@astrojs/cloudflare": "^12.6.12",
+        "astro": "^5.17.2",
       },
       "devDependencies": {
-        "@types/node": "latest",
-        "typescript": "latest",
-        "wrangler": "latest",
+        "@types/node": "^25.2.3",
+        "typescript": "^5.9.3",
+        "wrangler": "^4.65.0",
       },
     },
   },

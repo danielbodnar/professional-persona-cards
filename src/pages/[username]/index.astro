@@ -139,11 +139,11 @@ const meta = profileData ? buildMeta(profileData) : "";
 const personaRefs = profileData ? buildPersonaRefs(profileData) : [];
 
 const pageTitle = profileData?.profile?.display_name
-  ? `${profileData.profile.display_name} — Identity Deck`
-  : `${username} — Identity Deck`;
+  ? `${profileData.profile.display_name} — profiles.sh`
+  : `${username} — profiles.sh`;
 const pageDesc = profileData?.profile?.display_name
   ? `Professional persona cards for ${profileData.profile.display_name}`
-  : `Identity Deck for ${username}`;
+  : `profiles.sh for ${username}`;
 ---
 <Base title={pageTitle} description={pageDesc}>
   {isComputing && (
@@ -153,7 +153,7 @@ const pageDesc = profileData?.profile?.display_name
   {errorMessage && (
     <main class="error-page">
       <div class="error-content">
-        <div class="label">Identity Deck</div>
+        <div class="label">profiles.sh</div>
         <h1 class="error-title">Profile Not Found</h1>
         <p class="error-msg">{errorMessage}</p>
         <a href="/" class="back-link">&larr; back to search</a>
@@ -293,7 +293,7 @@ const pageDesc = profileData?.profile?.display_name
 
       {/* Footer */}
       <footer class="profile-footer">
-        <span>Identity Deck &middot; generated from public GitHub data</span>
+        <span>profiles.sh &middot; generated from public GitHub data</span>
       </footer>
     </main>
   )}

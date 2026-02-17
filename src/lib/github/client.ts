@@ -4,18 +4,17 @@
  * All requests use:
  *   - Authorization via GITHUB_TOKEN secret (5000 req/hour) when available
  *   - Falls back to unauthenticated requests (60 req/hour) if token is missing/invalid
- *   - User-Agent: IdentityDeck/1.0
+ *   - User-Agent: ProfilesSh/1.0
  *   - Accept: application/vnd.github.v3+json
- *   - per_page=100 for paginated endpoints
+ *   - per_page configurable (default 100)
  */
 
 import type { GitHubProfile, GitHubRepo, StarsMeta } from "./types";
 import { getCached, putCached } from "./cache";
+import type { AppConfig } from "../config";
 
 const GITHUB_API = "https://api.github.com";
-const USER_AGENT = "IdentityDeck/1.0";
-const PER_PAGE = 100;
-const MAX_STAR_PAGES = 30; // Cap at 3000 stars
+const USER_AGENT = "ProfilesSh/1.0";
 
 /** Track whether the token is known to be invalid (avoids repeated 401s). */
 let tokenInvalid = false;
@@ -55,8 +54,10 @@ async function githubFetch(
  */
 export async function fetchProfile(
   username: string,
-  env: { KV: KVNamespace; GITHUB_TOKEN?: string },
+  env: { KV?: KVNamespace; GITHUB_TOKEN?: string },
+  config?: Pick<AppConfig, "cacheTtl">,
 ): Promise<GitHubProfile> {
+  const ttl = config?.cacheTtl ?? 86400;
   const cacheKey = `github:profile:${username}`;
 
   const cached = await getCached<GitHubProfile>(env.KV, cacheKey);
@@ -78,7 +79,7 @@ export async function fetchProfile(
   }
 
   const data: GitHubProfile = await res.json();
-  await putCached(env.KV, cacheKey, data);
+  await putCached(env.KV, cacheKey, data, ttl);
 
   return data;
 }
@@ -86,11 +87,17 @@ export async function fetchProfile(
 /**
  * Fetch all owned (non-fork) repos for a user, paginated, with KV caching.
  * KV key: github:repos:{username}
+ *
+ * Caps at `config.maxRepoPages` pages (default 5 = 500 repos).
  */
 export async function fetchRepos(
   username: string,
-  env: { KV: KVNamespace; GITHUB_TOKEN?: string },
+  env: { KV?: KVNamespace; GITHUB_TOKEN?: string },
+  config?: Pick<AppConfig, "githubPerPage" | "maxRepoPages" | "cacheTtl">,
 ): Promise<GitHubRepo[]> {
+  const perPage = config?.githubPerPage ?? 100;
+  const maxPages = config?.maxRepoPages ?? 5;
+  const ttl = config?.cacheTtl ?? 86400;
   const cacheKey = `github:repos:${username}`;
 
   const cached = await getCached<GitHubRepo[]>(env.KV, cacheKey);
@@ -99,9 +106,9 @@ export async function fetchRepos(
   const repos: GitHubRepo[] = [];
   let page = 1;
 
-  while (true) {
+  while (page <= maxPages) {
     const res = await githubFetch(
-      `${GITHUB_API}/users/${username}/repos?per_page=${PER_PAGE}&page=${page}&sort=pushed`,
+      `${GITHUB_API}/users/${username}/repos?per_page=${perPage}&page=${page}&sort=pushed`,
       env.GITHUB_TOKEN,
     );
 
@@ -113,11 +120,11 @@ export async function fetchRepos(
     if (data.length === 0) break;
 
     repos.push(...data.filter(r => !r.fork));
-    if (data.length < PER_PAGE) break;
+    if (data.length < perPage) break;
     page++;
   }
 
-  await putCached(env.KV, cacheKey, repos);
+  await putCached(env.KV, cacheKey, repos, ttl);
   return repos;
 }
 
@@ -127,23 +134,28 @@ export async function fetchRepos(
  * Each page is individually cached under github:stars:{username}:{page}.
  * A metadata entry at github:stars:{username}:meta tracks overall state.
  *
- * Caps at 30 pages = 3000 stars to stay within Worker CPU limits.
+ * Caps at `config.maxStarPages` pages (default 50 = 5000 stars).
  */
 export async function fetchAllStars(
   username: string,
-  env: { KV: KVNamespace; GITHUB_TOKEN?: string },
+  env: { KV?: KVNamespace; GITHUB_TOKEN?: string },
+  config?: Pick<AppConfig, "githubPerPage" | "maxStarPages" | "cacheTtl">,
 ): Promise<GitHubRepo[]> {
+  const perPage = config?.githubPerPage ?? 100;
+  const maxPages = config?.maxStarPages ?? 50;
+  const ttl = config?.cacheTtl ?? 86400;
+
   const stars: GitHubRepo[] = [];
   let page = 1;
   let fetchedPages = 0;
 
-  while (page <= MAX_STAR_PAGES) {
+  while (page <= maxPages) {
     const cacheKey = `github:stars:${username}:${page}`;
     let data = await getCached<GitHubRepo[]>(env.KV, cacheKey);
 
     if (!data) {
       const res = await githubFetch(
-        `${GITHUB_API}/users/${username}/starred?per_page=${PER_PAGE}&page=${page}`,
+        `${GITHUB_API}/users/${username}/starred?per_page=${perPage}&page=${page}`,
         env.GITHUB_TOKEN,
       );
 
@@ -154,13 +166,12 @@ export async function fetchAllStars(
       data = await res.json();
       if (!data || data.length === 0) break;
 
-      // Cache this page for 24 hours
-      await putCached(env.KV, cacheKey, data);
+      await putCached(env.KV, cacheKey, data, ttl);
     }
 
     fetchedPages++;
     stars.push(...data);
-    if (data.length < PER_PAGE) break;
+    if (data.length < perPage) break;
     page++;
   }
 
@@ -168,9 +179,33 @@ export async function fetchAllStars(
   const meta: StarsMeta = {
     totalPages: fetchedPages,
     fetchedAt: new Date().toISOString(),
-    complete: page <= MAX_STAR_PAGES,
+    complete: page <= maxPages,
   };
-  await putCached(env.KV, `github:stars:${username}:meta`, meta);
+  await putCached(env.KV, `github:stars:${username}:meta`, meta, ttl);
 
   return stars;
+}
+
+// ---------------------------------------------------------------------------
+// Repo filtering
+// ---------------------------------------------------------------------------
+
+/**
+ * Filter out archived, disabled, and inactive repos.
+ *
+ * A repo is considered inactive if its last push was more than
+ * `inactiveYears` years ago (default 3).
+ */
+export function filterActiveRepos(
+  repos: GitHubRepo[],
+  inactiveYears = 3,
+): GitHubRepo[] {
+  const cutoff = new Date();
+  cutoff.setFullYear(cutoff.getFullYear() - inactiveYears);
+
+  return repos.filter((r) =>
+    !r.archived &&
+    !r.disabled &&
+    (!r.pushed_at || new Date(r.pushed_at) >= cutoff)
+  );
 }

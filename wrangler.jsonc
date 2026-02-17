@@ -1,13 +1,13 @@
 {
   "$schema": "./node_modules/wrangler/config-schema.json",
-  "name": "identity-deck",
+  "name": "profiles-sh",
   "account_id": "5dae265f74e6077ad674a3d855bf9853",
   "main": "dist/_worker.js/index.js",
   "assets": {
     "directory": "dist",
     "binding": "ASSETS"
   },
-  "compatibility_date": "2026-01-20",
+  "compatibility_date": "2026-02-16",
   "compatibility_flags": ["nodejs_compat"],
   "observability": {
     "enabled": true,
