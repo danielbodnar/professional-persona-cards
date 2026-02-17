@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-**Identity Deck** is a multi-tenant SaaS platform that generates professional persona profile cards from any GitHub user's data. It uses deterministic algorithms (topic matching, language analysis, repo metadata parsing, star pattern clustering) to assign "career personas" — **NO AI/LLM API calls**.
+**profiles.sh** is a multi-tenant SaaS platform that generates professional persona profile cards from any GitHub user's data. It uses deterministic algorithms (topic matching, language analysis, repo metadata parsing, star pattern clustering) to assign "career personas" — **NO AI/LLM API calls**.
 
 Deployed on **Cloudflare Workers** using **Astro** (SSR mode) with D1, KV, R2, Queues, and Durable Objects.
 

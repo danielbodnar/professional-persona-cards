@@ -34,8 +34,8 @@ const { name, subtitle, meta, avatarUrl } = Astro.props;
   }
 
   .avatar {
-    width: 64px;
-    height: 64px;
+    width: clamp(3rem, 5vw, 4rem);
+    height: clamp(3rem, 5vw, 4rem);
     border-radius: 50%;
     border: 1px solid rgba(255, 255, 255, 0.1);
     margin-bottom: 10px;
