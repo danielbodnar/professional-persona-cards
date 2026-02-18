@@ -23,6 +23,23 @@ function topicsMatch(repoTopic: string, catTopic: string): boolean {
   return repoTopic.includes(catTopic) || catTopic.includes(repoTopic);
 }
 
+/**
+ * Check if a keyword appears in text as a whole word (not as a substring of
+ * a larger word). For keywords < 6 chars, requires word boundaries on both
+ * sides to prevent matches like "edge" in "knowledge". Longer keywords are
+ * distinctive enough that simple includes suffices.
+ */
+function matchesKeyword(text: string, keyword: string): boolean {
+  if (keyword.length < 4) return false;
+  const idx = text.indexOf(keyword);
+  if (idx === -1) return false;
+  if (keyword.length >= 6) return true;
+  // Short keyword (4-5 chars): require word boundaries
+  const before = idx > 0 ? text[idx - 1] : " ";
+  const after = idx + keyword.length < text.length ? text[idx + keyword.length] : " ";
+  return !/[a-z0-9]/.test(before) && !/[a-z0-9]/.test(after);
+}
+
 /** Score a single repo against a single category's signals. */
 function scoreRepo(
   lang: string,
@@ -44,18 +61,13 @@ function scoreRepo(
   ).length;
   score += topicMatches * 3;
 
-  // Description keyword match: +1.5 per keyword (skip short keywords to avoid
-  // false positives like "gin" matching "engine")
-  const descMatches = cat.keywords.filter((kw) =>
-    kw.length >= 4 && desc.includes(kw),
-  ).length;
+  // Description keyword match: +1.5 per keyword
+  const descMatches = cat.keywords.filter((kw) => matchesKeyword(desc, kw)).length;
   score += descMatches * 1.5;
 
   // Repo name match: +1 per keyword (use repo name, not full_name with owner prefix)
   const repoName = name.includes("/") ? name.split("/").pop()! : name;
-  const nameMatches = cat.keywords.filter((kw) =>
-    kw.length >= 4 && repoName.includes(kw),
-  ).length;
+  const nameMatches = cat.keywords.filter((kw) => matchesKeyword(repoName, kw)).length;
   score += nameMatches * 1;
 
   return score;
