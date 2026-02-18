@@ -1,0 +1,6 @@
+{
+  "name": "empty-bucket-tmp",
+  "main": "empty-bucket.ts",
+  "compatibility_date": "2026-02-16",
+  "r2_buckets": [{ "binding": "OLD_R2", "bucket_name": "identity-deck-assets" }]
+}
